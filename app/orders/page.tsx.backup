@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "@/app/components/Sidebar";
 import { createClient } from "@/lib/supabase/client";
-import OrderList from "./OrderList";
 
 const supabase = createClient();
 
@@ -994,7 +993,9 @@ export default function OrdersPage() {
       {/* ===================================================
           SIDEBAR
       =================================================== */}
-<Sidebar />
+
+            
+      <Sidebar />
 
       {/* ===================================================
           MAIN

@@ -1,1035 +1,2227 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+import Sidebar from "@/app/components/Sidebar";
 import { createClient } from "@/lib/supabase/client";
 
-type Customer = {
-  id: string;
-  code: string;
-  name: string;
-};
+const supabase = createClient();
 
-type SalesChannel = {
-  id: string;
-  customer_id: string;
-  code: string;
-  name: string;
-};
-
-type Store = {
-  id: string;
-  customer_id: string;
-  sales_channel_id: string;
-  code: string;
-  name: string;
-};
+/* =========================================================
+   TYPE
+========================================================= */
 
 type Order = {
   id: string;
-  customer_id: string;
-  sales_channel_id: string;
-  store_id: string;
-  order_number: string;
-  source_order_number: string | null;
-  order_date: string;
-  delivery_date: string | null;
-  status: string;
-  total_qty: number;
-  total_amount: number;
-  wms_sync_status: string | null;
+
+  order_no: string | null;
+  order_number?: string | null;
+  source_order_number?: string | null;
+
+  customer_id: string | null;
+
+  channel: string | null;
+  sales_channel_id?: string | null;
+  sales_channel_group_id?: string | null;
+
+  order_date: string | null;
+  delivery_date?: string | null;
+
+  status: string | null;
+
+  total_qty?: number | null;
+  total_amount?: number | null;
+
+  memo?: string | null;
+
+  shipment_requested: boolean | null;
+  shipment_requested_at?: string | null;
+
+  confirmed_at?: string | null;
+
+  created_at: string;
 };
 
-const STATUS_LIST = [
-  "수집완료",
-  "검토중",
-  "출고대기",
-  "출고중",
-  "출고완료",
-  "배송완료",
+type Customer = {
+  id: string;
+  code: string | null;
+  name: string;
+};
+
+type OrderItem = {
+  order_id: string;
+  quantity: number | null;
+};
+
+type OrderCheck = {
+  id: string;
+  status: string | null;
+  confirmed_at: string | null;
+  shipment_requested: boolean | null;
+  shipment_requested_at: string | null;
+};
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+const STATUS = [
+  "전체",
+  "접수",
+  "확인",
+  "확정",
   "취소",
 ];
 
-export default function OrderList() {
-  const supabase = createClient();
+/* =========================================================
+   PAGE
+========================================================= */
 
-  /*
-   * =====================================================
-   * 기본 데이터
-   * =====================================================
-   */
+export default function OrderList({
+  mode = "all",
+}: {
+  mode?: "all" | "new" | "confirmed" | "cancelled" | "search";
+}) {
+  const [orders, setOrders] = useState<Order[]>([]);
+  
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [items, setItems] = useState<OrderItem[]>([]);
 
-  const [customers, setCustomers] =
-    useState<Customer[]>([]);
+  const [status, setStatus] = useState("전체");
+  const [search, setSearch] = useState("");
 
-  const [channels, setChannels] =
-    useState<SalesChannel[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [stores, setStores] =
-    useState<Store[]>([]);
+  const [processingId, setProcessingId] =
+    useState<string | null>(null);
 
-  const [orders, setOrders] =
-    useState<Order[]>([]);
+  /* =======================================================
+     일괄처리 선택
+  ======================================================= */
 
-  const [loading, setLoading] =
-    useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
 
-  /*
-   * =====================================================
-   * 검색조건
-   * =====================================================
-   */
+  const [error, setError] = useState("");
 
-  const [searchCustomer, setSearchCustomer] =
-    useState("");
+    /* =======================================================
+     화면 모드
+     
+     all       : 전체 주문
+     new       : 신규 주문 = 접수
+     confirmed : 확정 주문 = 확정
+     cancelled : 취소 주문 = 취소
+     search    : 주문 검색
+  ======================================================= */
 
-  const [searchChannel, setSearchChannel] =
-    useState("");
+  const modeConfig = useMemo(() => {
+    switch (mode) {
+      case "new":
+        return {
+          title: "신규 주문",
+          description: "접수된 신규 주문을 확인하고 처리합니다.",
+          status: "접수",
+        };
 
-  const [searchStore, setSearchStore] =
-    useState("");
+      case "confirmed":
+        return {
+          title: "확정 주문",
+          description: "확정된 주문 및 출고요청 상태를 관리합니다.",
+          status: "확정",
+        };
 
-  const [searchOrderDate, setSearchOrderDate] =
-    useState("");
+      case "cancelled":
+        return {
+          title: "취소 주문",
+          description: "취소된 주문을 조회합니다.",
+          status: "취소",
+        };
 
-  const [searchStatus, setSearchStatus] =
-    useState("");
+      case "search":
+        return {
+          title: "주문 검색",
+          description: "주문번호, 거래처, 채널로 주문을 검색합니다.",
+          status: "전체",
+        };
 
-  /*
-   * =====================================================
-   * 초기화
-   * =====================================================
-   */
+      case "all":
+      default:
+        return {
+          title: "주문 관리",
+          description: "B2B 주문 접수 및 확정 관리",
+          status: "전체",
+        };
+    }
+  }, [mode]);
 
-  useEffect(() => {
-    loadMasterData();
-    loadOrders();
+  /* =======================================================
+     최초 조회
+  ======================================================= */
+
+    useEffect(() => {
+    loadData();
   }, []);
 
-  /*
-   * =====================================================
-   * 화주 / 판매채널 / 배송처
-   * =====================================================
-   */
+  /* =======================================================
+     메뉴별 기본 상태
+  ======================================================= */
 
-  async function loadMasterData() {
-    const [
-      customerResult,
-      channelResult,
-      storeResult,
-    ] = await Promise.all([
-      supabase
-        .from("customers")
-        .select(`
-          id,
-          code,
-          name
-        `)
-        .eq("active", true)
-        .order("name"),
+  useEffect(() => {
+    setStatus(modeConfig.status);
+    setSearch("");
+    setSelectedIds([]);
+  }, [mode, modeConfig.status]);
 
-      supabase
-        .from("delivery_targets")
-        .select(`
-          id,
-          customer_id,
-          code,
-          name
-        `)
-        .eq("active", true)
-        .order("name"),
+  /* =======================================================
+     전체 데이터 조회
+  ======================================================= */
 
-      supabase
-        .from("stores")
-        .select(`
-          id,
-          customer_id,
-          sales_channel_id,
-          code,
-          name
-        `)
-        .eq("active", true)
-        .order("name"),
-    ]);
-
-    if (customerResult.error) {
-      console.error(
-        "CUSTOMER LOAD ERROR",
-        customerResult.error
-      );
-    }
-
-    if (channelResult.error) {
-      console.error(
-        "CHANNEL LOAD ERROR",
-        channelResult.error
-      );
-    }
-
-    if (storeResult.error) {
-      console.error(
-        "STORE LOAD ERROR",
-        storeResult.error
-      );
-    }
-
-    setCustomers(
-      customerResult.data ?? []
-    );
-
-    setChannels(
-      channelResult.data ?? []
-    );
-
-    setStores(
-      storeResult.data ?? []
-    );
-  }
-
-  /*
-   * =====================================================
-   * 주문 조회
-   * =====================================================
-   */
-
-  async function loadOrders() {
+  async function loadData() {
     setLoading(true);
+    setError("");
 
-    let query = supabase
-      .from("orders")
-      .select(`
-        id,
-        customer_id,
-        sales_channel_id,
-        store_id,
-        order_number,
-        source_order_number,
-        order_date,
-        delivery_date,
-        status,
-        total_qty,
-        total_amount,
-        wms_sync_status
-      `)
-      .order(
-        "order_date",
-        {
-          ascending: false,
-        }
+    try {
+      const [
+        ordersResult,
+        customersResult,
+        itemsResult,
+      ] = await Promise.all([
+        supabase
+          .from("orders")
+          .select("*")
+          .order("created_at", {
+            ascending: false,
+          }),
+
+        supabase
+          .from("customers")
+          .select("id, code, name")
+          .order("name"),
+
+        supabase
+          .from("order_items")
+          .select("order_id, quantity"),
+      ]);
+
+      console.log(
+        "주문관리 DB 조회 결과:",
+        ordersResult.data
       );
 
-    /*
-     * 화주
-     */
-
-    if (searchCustomer) {
-      query = query.eq(
-        "customer_id",
-        searchCustomer
-      );
-    }
-
-    /*
-     * 판매채널
-     */
-
-    if (searchChannel) {
-      query = query.eq(
-        "sales_channel_id",
-        searchChannel
-      );
-    }
-
-    /*
-     * 배송처
-     */
-
-    if (searchStore) {
-      query = query.eq(
-        "store_id",
-        searchStore
-      );
-    }
-
-    /*
-     * 주문일
-     */
-
-    if (searchOrderDate) {
-      query = query.eq(
-        "order_date",
-        searchOrderDate
-      );
-    }
-
-    /*
-     * 주문상태
-     */
-
-    if (searchStatus) {
-      query = query.eq(
-        "status",
-        searchStatus
-      );
-    }
-
-    const {
-      data,
-      error,
-    } = await query;
-
-    if (error) {
-      console.error(
-        "ORDER LOAD ERROR",
-        error
+      console.log(
+        "주문관리 DB 조회 오류:",
+        ordersResult.error
       );
 
-      alert(
-        `주문 조회 오류\n${error.message}`
-      );
+      if (ordersResult.error) {
+        setError(
+          `주문 조회 실패: ${ordersResult.error.message}`
+        );
+      }
 
-      setOrders([]);
-    } else {
+      if (customersResult.error) {
+        setError(
+          `거래처 조회 실패: ${customersResult.error.message}`
+        );
+      }
+
+      if (itemsResult.error) {
+        setError(
+          `상품 조회 실패: ${itemsResult.error.message}`
+        );
+      }
+
       setOrders(
-        data ?? []
+        (ordersResult.data || []) as Order[]
       );
+
+      setCustomers(
+        (customersResult.data || []) as Customer[]
+      );
+
+      setItems(
+        (itemsResult.data || []) as OrderItem[]
+      );
+    } catch (err) {
+      console.error(
+        "주문관리 데이터 조회 오류:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "주문 데이터를 불러오는 중 오류가 발생했습니다."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /* =======================================================
+     주문 상태 변경
+
+     접수 → 확인
+     확인 → 확정
+
+     ※ 출고요청은 status를 변경하지 않음
+  ======================================================= */
+
+  async function updateOrderStatus(
+    order: Order,
+    nextStatus: string
+  ) {
+    if (processingId || bulkProcessing) return;
+
+    console.log("상태변경 시작:", {
+      orderId: order.id,
+      currentStatus: order.status,
+      nextStatus,
+    });
+
+    setProcessingId(order.id);
+    setError("");
+
+    try {
+      const now = new Date().toISOString();
+
+      const updateData: Record<
+        string,
+        unknown
+      > = {
+        status: nextStatus,
+      };
+
+      /*
+       * 확정일 기록
+       */
+      if (nextStatus === "확정") {
+        updateData.confirmed_at = now;
+      }
+
+      /* ===================================================
+         1. DB UPDATE
+      =================================================== */
+
+      const {
+        error: updateError,
+      } = await supabase
+        .from("orders")
+        .update(updateData)
+        .eq("id", order.id)
+        .eq("status", order.status);
+
+      console.log(
+        "상태변경 UPDATE 결과:",
+        updateError
+      );
+
+      if (updateError) {
+        setError(
+          `주문 상태 변경 실패: ${updateError.message}`
+        );
+
+        return;
+      }
+
+      /* ===================================================
+         2. 실제 DB 다시 조회
+      =================================================== */
+
+      const {
+        data: checkData,
+        error: checkError,
+      } = await supabase
+        .from("orders")
+        .select(
+          "id, status, confirmed_at, shipment_requested, shipment_requested_at"
+        )
+        .eq("id", order.id);
+
+      console.log(
+        "상태변경 후 DB 재조회:",
+        checkData,
+        checkError
+      );
+
+      if (checkError) {
+        setError(
+          `상태는 변경되었지만 DB 확인에 실패했습니다: ${checkError.message}`
+        );
+
+        return;
+      }
+
+      const updatedOrder =
+        checkData?.[0] as OrderCheck | undefined;
+
+      if (!updatedOrder) {
+        setError(
+          "상태 변경 후 주문 정보를 확인할 수 없습니다."
+        );
+
+        return;
+      }
+
+      /* ===================================================
+         3. 실제 DB 값으로 화면 갱신
+      =================================================== */
+
+      setOrders((prev) =>
+        prev.map((item) =>
+          item.id === order.id
+            ? {
+                ...item,
+
+                status:
+                  updatedOrder.status,
+
+                confirmed_at:
+                  updatedOrder.confirmed_at,
+
+                shipment_requested:
+                  updatedOrder.shipment_requested,
+
+                shipment_requested_at:
+                  updatedOrder.shipment_requested_at,
+              }
+            : item
+        )
+      );
+
+      console.log(
+        "상태변경 완료:",
+        updatedOrder
+      );
+    } catch (err) {
+      console.error(
+        "상태 변경 처리 오류:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "주문 상태 변경 중 오류가 발생했습니다."
+      );
+    } finally {
+      setProcessingId(null);
+    }
+  }
+
+  /* =======================================================
+     출고 요청
+
+     확정
+       ↓
+     shipment_requested = true
+
+     status는 "확정" 그대로 유지
+  ======================================================= */
+
+  async function requestShipment(
+    order: Order
+  ) {
+    if (processingId || bulkProcessing) return;
+
+    if (order.status !== "확정") {
+      alert(
+        "확정된 주문만 출고 요청할 수 있습니다."
+      );
+
+      return;
     }
 
-    setLoading(false);
-  }
+    if (
+      order.shipment_requested === true
+    ) {
+      return;
+    }
 
-  /*
-   * =====================================================
-   * 검색
-   * =====================================================
-   */
-
-  function handleSearch() {
-    loadOrders();
-  }
-
-  /*
-   * =====================================================
-   * 검색조건 초기화
-   * =====================================================
-   */
-
-  function handleReset() {
-    setSearchCustomer("");
-    setSearchChannel("");
-    setSearchStore("");
-    setSearchOrderDate("");
-    setSearchStatus("");
-
-    setTimeout(() => {
-      loadOrders();
-    }, 0);
-  }
-
-  /*
-   * =====================================================
-   * 화주 변경
-   * =====================================================
-   */
-
-  function handleCustomerChange(
-    value: string
-  ) {
-    setSearchCustomer(value);
-
-    setSearchChannel("");
-    setSearchStore("");
-  }
-
-  /*
-   * =====================================================
-   * 판매채널 변경
-   * =====================================================
-   */
-
-  function handleChannelChange(
-    value: string
-  ) {
-    setSearchChannel(value);
-    setSearchStore("");
-  }
-
-  /*
-   * =====================================================
-   * 판매채널 필터
-   * =====================================================
-   */
-
-  const customerChannels =
-    channels.filter(
-      (channel) =>
-        !searchCustomer ||
-        channel.customer_id ===
-          searchCustomer
+    console.log(
+      "출고요청 시작:",
+      order.id
     );
 
-  /*
-   * =====================================================
-   * 배송처 필터
-   * =====================================================
-   */
+    setProcessingId(order.id);
+    setError("");
 
-  const channelStores =
-    stores.filter(
-      (store) =>
-        (!searchCustomer ||
-          store.customer_id ===
-            searchCustomer) &&
-        (!searchChannel ||
-          store.sales_channel_id ===
-            searchChannel)
-    );
+    try {
+      const now =
+        new Date().toISOString();
 
-  /*
-   * =====================================================
-   * 표시용 이름
-   * =====================================================
-   */
+      /* =================================================
+         1. DB UPDATE
+      ================================================= */
 
-  function getCustomerName(
-    id: string
-  ) {
-    return (
-      customers.find(
-        (item) =>
-          item.id === id
-      )?.name ?? "-"
-    );
+      const {
+        error: updateError,
+      } = await supabase
+        .from("orders")
+        .update({
+          shipment_requested: true,
+          shipment_requested_at: now,
+        })
+        .eq("id", order.id)
+        .eq("status", "확정");
+
+      console.log(
+        "출고요청 UPDATE 결과:",
+        updateError
+      );
+
+      if (updateError) {
+        setError(
+          `출고 요청 실패: ${updateError.message}`
+        );
+
+        return;
+      }
+
+      /* =================================================
+         2. DB 재조회
+      ================================================= */
+
+      const {
+        data: checkData,
+        error: checkError,
+      } = await supabase
+        .from("orders")
+        .select(
+          "id, status, confirmed_at, shipment_requested, shipment_requested_at"
+        )
+        .eq("id", order.id);
+
+      console.log(
+        "출고요청 DB 재조회:",
+        checkData,
+        checkError
+      );
+
+      if (checkError) {
+        setError(
+          `출고 요청 후 DB 확인 실패: ${checkError.message}`
+        );
+
+        return;
+      }
+
+      const updatedOrder =
+        checkData?.[0] as OrderCheck | undefined;
+
+      if (!updatedOrder) {
+        setError(
+          "출고 요청 후 주문 정보를 찾을 수 없습니다."
+        );
+
+        return;
+      }
+
+      /* =================================================
+         3. 실제 DB 값 검증
+      ================================================= */
+
+      if (
+        updatedOrder.shipment_requested !==
+        true
+      ) {
+        setError(
+          "출고요청 UPDATE는 성공했지만 DB 값이 true로 저장되지 않았습니다."
+        );
+
+        return;
+      }
+
+      /* =================================================
+         4. 화면에 DB 값 반영
+      ================================================= */
+
+      setOrders((prev) =>
+        prev.map((item) =>
+          item.id === order.id
+            ? {
+                ...item,
+
+                status:
+                  updatedOrder.status,
+
+                confirmed_at:
+                  updatedOrder.confirmed_at,
+
+                shipment_requested:
+                  updatedOrder.shipment_requested,
+
+                shipment_requested_at:
+                  updatedOrder.shipment_requested_at,
+              }
+            : item
+        )
+      );
+
+      console.log(
+        "출고요청 완료:",
+        updatedOrder
+      );
+    } catch (err) {
+      console.error(
+        "출고요청 처리 오류:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "출고 요청 중 오류가 발생했습니다."
+      );
+    } finally {
+      setProcessingId(null);
+    }
   }
 
-  function getChannelName(
-    id: string
+  /* =======================================================
+     일괄처리 가능한 주문인지 확인
+  ======================================================= */
+
+  function isBulkProcessable(
+    order: Order
   ) {
-    return (
-      channels.find(
-        (item) =>
-          item.id === id
-      )?.name ?? "-"
-    );
+    if (order.status === "접수") {
+      return true;
+    }
+
+    if (order.status === "확인") {
+      return true;
+    }
+
+    if (
+      order.status === "확정" &&
+      order.shipment_requested !== true
+    ) {
+      return true;
+    }
+
+    return false;
   }
 
-  function getStoreName(
-    id: string
-  ) {
-    return (
-      stores.find(
-        (item) =>
-          item.id === id
-      )?.name ?? "-"
-    );
+  /* =======================================================
+     일괄처리
+     
+     접수 → 확인
+     확인 → 확정
+     확정 → 출고요청
+
+     한 번 클릭하면 각 주문은 현재 상태에서
+     딱 한 단계만 진행
+  ======================================================= */
+
+  async function handleBulkProcess() {
+    if (bulkProcessing) return;
+
+    if (selectedIds.length === 0) {
+      alert(
+        "일괄처리할 주문을 선택하세요."
+      );
+
+      return;
+    }
+
+    const selectedOrders =
+      orders.filter((order) =>
+        selectedIds.includes(order.id)
+      );
+
+    const processableOrders =
+      selectedOrders.filter(
+        isBulkProcessable
+      );
+
+    if (
+      processableOrders.length === 0
+    ) {
+      alert(
+        "일괄처리할 수 있는 주문이 없습니다."
+      );
+
+      return;
+    }
+
+    const skippedCount =
+      selectedOrders.length -
+      processableOrders.length;
+
+    let confirmMessage =
+      `선택한 ${selectedOrders.length.toLocaleString()}건을 일괄처리하시겠습니까?\n\n`;
+
+    confirmMessage +=
+      `처리 대상: ${processableOrders.length.toLocaleString()}건`;
+
+    if (skippedCount > 0) {
+      confirmMessage +=
+        `\n처리 제외: ${skippedCount.toLocaleString()}건`;
+    }
+
+    confirmMessage +=
+      "\n\n※ 각 주문은 현재 상태에서 다음 단계로만 진행됩니다.";
+
+    const confirmed =
+      window.confirm(
+        confirmMessage
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBulkProcessing(true);
+    setError("");
+
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      /*
+       * 선택된 주문을 하나씩 처리합니다.
+       * 동시에 여러 UPDATE를 보내지 않아
+       * 상태 충돌 가능성을 줄입니다.
+       */
+
+      for (
+        const order of processableOrders
+      ) {
+        try {
+          const currentStatus =
+            order.status;
+
+          const now =
+            new Date().toISOString();
+
+          /* =============================================
+             접수 → 확인
+          ============================================= */
+
+          if (
+            currentStatus === "접수"
+          ) {
+            const {
+              error: updateError,
+            } = await supabase
+              .from("orders")
+              .update({
+                status: "확인",
+              })
+              .eq("id", order.id)
+              .eq("status", "접수");
+
+            if (updateError) {
+              console.error(
+                "일괄 확인 처리 실패:",
+                order.id,
+                updateError
+              );
+
+              failCount++;
+              continue;
+            }
+
+            successCount++;
+            continue;
+          }
+
+          /* =============================================
+             확인 → 확정
+          ============================================= */
+
+          if (
+            currentStatus === "확인"
+          ) {
+            const {
+              error: updateError,
+            } = await supabase
+              .from("orders")
+              .update({
+                status: "확정",
+                confirmed_at: now,
+              })
+              .eq("id", order.id)
+              .eq("status", "확인");
+
+            if (updateError) {
+              console.error(
+                "일괄 확정 처리 실패:",
+                order.id,
+                updateError
+              );
+
+              failCount++;
+              continue;
+            }
+
+            successCount++;
+            continue;
+          }
+
+          /* =============================================
+             확정 → 출고 요청
+          ============================================= */
+
+          if (
+            currentStatus === "확정" &&
+            order.shipment_requested !== true
+          ) {
+            const {
+              error: updateError,
+            } = await supabase
+              .from("orders")
+              .update({
+                shipment_requested: true,
+                shipment_requested_at: now,
+              })
+              .eq("id", order.id)
+              .eq("status", "확정")
+              .eq(
+                "shipment_requested",
+                false
+              );
+
+            if (updateError) {
+              console.error(
+                "일괄 출고요청 실패:",
+                order.id,
+                updateError
+              );
+
+              failCount++;
+              continue;
+            }
+
+            successCount++;
+          }
+        } catch (orderError) {
+          console.error(
+            "개별 일괄처리 오류:",
+            order.id,
+            orderError
+          );
+
+          failCount++;
+        }
+      }
+
+      /* =================================================
+         전체 처리 후 DB에서 다시 조회
+
+         화면을 DB 실제값으로 맞춤
+      ================================================= */
+
+      await loadData();
+
+      setSelectedIds([]);
+
+      if (failCount === 0) {
+        alert(
+          `${successCount.toLocaleString()}건의 주문이 일괄처리되었습니다.`
+        );
+      } else {
+        alert(
+          `일괄처리가 완료되었습니다.\n\n성공: ${successCount.toLocaleString()}건\n실패: ${failCount.toLocaleString()}건`
+        );
+      }
+    } catch (err) {
+      console.error(
+        "일괄처리 전체 오류:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "주문 일괄처리 중 오류가 발생했습니다."
+      );
+    } finally {
+      setBulkProcessing(false);
+    }
   }
 
-  /*
-   * =====================================================
-   * 화면
-   * =====================================================
-   */
+  /* =======================================================
+     거래처 Map
+  ======================================================= */
+
+  const customerMap = useMemo(() => {
+    return new Map(
+      customers.map((customer) => [
+        customer.id,
+        customer,
+      ])
+    );
+  }, [customers]);
+
+  /* =======================================================
+     상품 Map
+  ======================================================= */
+
+  const itemMap = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        count: number;
+        quantity: number;
+      }
+    >();
+
+    items.forEach((item) => {
+      const current =
+        map.get(item.order_id) || {
+          count: 0,
+          quantity: 0,
+        };
+
+      map.set(item.order_id, {
+        count:
+          current.count + 1,
+
+        quantity:
+          current.quantity +
+          Number(
+            item.quantity || 0
+          ),
+      });
+    });
+
+    return map;
+  }, [items]);
+
+  /* =======================================================
+     상태별 주문 수
+  ======================================================= */
+
+  const statusCounts = useMemo(() => {
+    return {
+      전체: orders.length,
+
+      접수: orders.filter(
+        (order) =>
+          order.status === "접수"
+      ).length,
+
+      확인: orders.filter(
+        (order) =>
+          order.status === "확인"
+      ).length,
+
+      확정: orders.filter(
+        (order) =>
+          order.status === "확정"
+      ).length,
+
+      취소: orders.filter(
+        (order) =>
+          order.status === "취소"
+      ).length,
+    };
+  }, [orders]);
+
+  /* =======================================================
+     검색 / 필터
+  ======================================================= */
+
+  const filteredOrders = useMemo(() => {
+    const keyword =
+      search.trim().toLowerCase();
+
+    return orders.filter((order) => {
+      const customer =
+        order.customer_id
+          ? customerMap.get(
+              order.customer_id
+            )
+          : null;
+
+      const matchesStatus =
+        status === "전체" ||
+        order.status === status;
+
+      if (!matchesStatus) {
+        return false;
+      }
+
+      if (!keyword) {
+        return true;
+      }
+
+      const orderNo =
+        order.order_no ||
+        order.order_number ||
+        order.source_order_number ||
+        "";
+
+      const matchesSearch =
+        orderNo
+          .toLowerCase()
+          .includes(keyword) ||
+
+        customer?.name
+          ?.toLowerCase()
+          .includes(keyword) ||
+
+        customer?.code
+          ?.toLowerCase()
+          .includes(keyword) ||
+
+        order.channel
+          ?.toLowerCase()
+          .includes(keyword);
+
+      return !!matchesSearch;
+    });
+  }, [
+    orders,
+    customerMap,
+    search,
+    status,
+  ]);
+
+  /* =======================================================
+     전체 선택
+  ======================================================= */
+
+  const filteredSelectableIds =
+    useMemo(() => {
+      return filteredOrders
+        .filter(isBulkProcessable)
+        .map((order) => order.id);
+    }, [filteredOrders]);
+
+  const allFilteredSelected =
+    filteredSelectableIds.length > 0 &&
+    filteredSelectableIds.every(
+      (id) =>
+        selectedIds.includes(id)
+    );
+
+  function handleSelectAll(
+    checked: boolean
+  ) {
+    if (checked) {
+      setSelectedIds(
+        filteredSelectableIds
+      );
+    } else {
+      setSelectedIds([]);
+    }
+  }
+
+  /* =======================================================
+     개별 선택
+  ======================================================= */
+
+  function handleSelectOrder(
+    id: string,
+    checked: boolean
+  ) {
+    if (checked) {
+      setSelectedIds((prev) => {
+        if (prev.includes(id)) {
+          return prev;
+        }
+
+        return [
+          ...prev,
+          id,
+        ];
+      });
+    } else {
+      setSelectedIds((prev) =>
+        prev.filter(
+          (item) => item !== id
+        )
+      );
+    }
+  }
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
-    <div>
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "#f4f6f9",
+        color: "#111827",
+        fontFamily:
+          '"Malgun Gothic", "Noto Sans KR", Arial, sans-serif',
+        display: "flex",
+      }}
+    >
+      {/* ===================================================
+          SIDEBAR
+      =================================================== */}
 
-      {/* =================================================
-          검색
-      ================================================= */}
+            
+      <Sidebar />
 
-      <div
+      {/* ===================================================
+          MAIN
+      =================================================== */}
+
+      <section
         style={{
-          background: "#ffffff",
-          border:
-            "1px solid #e5e7eb",
-          borderRadius: "16px",
-          padding: "25px",
-          marginBottom: "20px",
+          flex: 1,
+          minWidth: 0,
+          padding: "34px 42px",
         }}
       >
-        <div
+        {/* =================================================
+            HEADER
+        ================================================= */}
+
+        <header
           style={{
             display: "flex",
-            alignItems: "center",
             justifyContent:
               "space-between",
-            marginBottom: "20px",
+            alignItems: "center",
+            marginBottom:
+              "28px",
           }}
         >
-          <h2
+          <div>
+            <div
+              style={{
+                fontSize: "14px",
+                color: "#64748b",
+                fontWeight: 600,
+              }}
+            >
+              SONGLIM LOGISTICS
+            </div>
+
+            <h1
+  style={{
+    margin: "6px 0 0",
+    fontSize: "32px",
+    fontWeight: 800,
+  }}
+>
+  {modeConfig.title}
+</h1>
+
+<p
+  style={{
+    margin: "8px 0 0",
+    color: "#64748b",
+    fontSize: "15px",
+  }}
+>
+  {modeConfig.description}
+</p>
+          </div>
+
+          <Link
+            href="/orders/new"
             style={{
-              margin: 0,
-              fontSize: "21px",
-              color: "#111827",
+              background:
+                "#2563eb",
+              color: "#ffffff",
+              textDecoration:
+                "none",
+              padding:
+                "13px 20px",
+              borderRadius: "9px",
+              fontSize: "14px",
+              fontWeight: 700,
             }}
           >
-            주문조회
-          </h2>
+            + 주문 등록
+          </Link>
+        </header>
+
+        {/* =================================================
+            ERROR
+        ================================================= */}
+
+        {error && (
+          <div
+            style={{
+              marginBottom:
+                "20px",
+              padding:
+                "16px 20px",
+              background:
+                "#fee2e2",
+              border:
+                "1px solid #fecaca",
+              color: "#b91c1c",
+              borderRadius:
+                "10px",
+            }}
+          >
+            <strong>
+              주문 처리 오류
+            </strong>
+
+            <div
+              style={{
+                marginTop:
+                  "5px",
+                fontSize:
+                  "13px",
+              }}
+            >
+              {error}
+            </div>
+          </div>
+        )}
+
+        {/* =================================================
+            STATUS SUMMARY
+        ================================================= */}
+
+                {/* =================================================
+            STATUS SUMMARY
+        ================================================= */}
+
+        {mode === "all" ? (
+          <section
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(5, minmax(0, 1fr))",
+              gap: "12px",
+              marginBottom: "18px",
+            }}
+          >
+            {STATUS.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => {
+                  setStatus(item);
+                  setSelectedIds([]);
+                }}
+                style={{
+                  textAlign: "left",
+                  border:
+                    status === item
+                      ? "2px solid #2563eb"
+                      : "1px solid #e5e7eb",
+                  background: "#ffffff",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "13px",
+                    color: "#64748b",
+                    fontWeight: 700,
+                  }}
+                >
+                  {item}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: "8px",
+                    fontSize: "25px",
+                    fontWeight: 800,
+                    color:
+                      status === item
+                        ? "#2563eb"
+                        : "#111827",
+                  }}
+                >
+                  {statusCounts[
+                    item as keyof typeof statusCounts
+                  ].toLocaleString()}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: "4px",
+                    fontSize: "12px",
+                    color: "#94a3b8",
+                  }}
+                >
+                  주문
+                </div>
+              </button>
+            ))}
+          </section>
+        ) : (
+          <section
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e5e7eb",
+              borderRadius: "14px",
+              padding: "20px 24px",
+              marginBottom: "18px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: "#64748b",
+                  fontWeight: 700,
+                }}
+              >
+                현재 화면
+              </div>
+
+              <div
+                style={{
+                  marginTop: "5px",
+                  fontSize: "20px",
+                  fontWeight: 800,
+                }}
+              >
+                {modeConfig.title}
+              </div>
+            </div>
+
+            <div
+              style={{
+                textAlign: "right",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#94a3b8",
+                }}
+              >
+                주문 건수
+              </div>
+
+              <div
+                style={{
+                  marginTop: "4px",
+                  fontSize: "28px",
+                  fontWeight: 800,
+                  color: "#2563eb",
+                }}
+              >
+                {filteredOrders.length.toLocaleString()}
+                <span
+                  style={{
+                    marginLeft: "4px",
+                    fontSize: "13px",
+                    color: "#64748b",
+                  }}
+                >
+                  건
+                </span>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* =================================================
+            SEARCH
+        ================================================= */}
+
+                {/* =================================================
+            SEARCH
+        ================================================= */}
+
+        {mode === "search" && (
+          <section
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e5e7eb",
+              borderRadius: "14px",
+              padding: "18px",
+              marginBottom: "18px",
+              display: "flex",
+              gap: "10px",
+            }}
+          >
+            <input
+              value={search}
+              onChange={(e) =>
+                setSearch(e.target.value)
+              }
+              placeholder="주문번호, 거래처명, 거래처코드, 채널 검색"
+              style={{
+                flex: 1,
+                height: "44px",
+                border: "1px solid #d1d5db",
+                borderRadius: "8px",
+                padding: "0 14px",
+                fontSize: "14px",
+                outline: "none",
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setSelectedIds([]);
+              }}
+              style={{
+                padding: "0 20px",
+                border: "1px solid #d1d5db",
+                background: "#ffffff",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontWeight: 700,
+              }}
+            >
+              초기화
+            </button>
+          </section>
+        )}
+
+        {/* =================================================
+            ORDER TABLE
+        ================================================= */}
+
+        <section
+          style={{
+            background:
+              "#ffffff",
+            border:
+              "1px solid #e5e7eb",
+            borderRadius:
+              "14px",
+            overflow:
+              "hidden",
+          }}
+        >
+          {/* TABLE HEADER */}
 
           <div
             style={{
-              fontSize: "13px",
-              color: "#64748b",
+              padding:
+                "20px 24px",
+              borderBottom:
+                "1px solid #e5e7eb",
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems:
+                "center",
             }}
           >
-            총 {orders.length.toLocaleString()}건
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(5, 1fr)",
-            gap: "12px",
-          }}
-        >
-
-          {/* 화주 */}
-
-          <Field label="화주">
-            <select
-              value={searchCustomer}
-              onChange={(e) =>
-                handleCustomerChange(
-                  e.target.value
-                )
-              }
-              style={inputStyle}
-            >
-              <option value="">
-                전체 화주
-              </option>
-
-              {customers.map(
-                (customer) => (
-                  <option
-                    key={
-                      customer.id
-                    }
-                    value={
-                      customer.id
-                    }
-                  >
-                    {customer.name}
-                  </option>
-                )
-              )}
-            </select>
-          </Field>
-
-          {/* 판매채널 */}
-
-          <Field label="판매채널">
-            <select
-              value={searchChannel}
-              onChange={(e) =>
-                handleChannelChange(
-                  e.target.value
-                )
-              }
-              style={inputStyle}
-              disabled={
-                !searchCustomer
-              }
-            >
-              <option value="">
-                전체 판매채널
-              </option>
-
-              {customerChannels.map(
-                (channel) => (
-                  <option
-                    key={
-                      channel.id
-                    }
-                    value={
-                      channel.id
-                    }
-                  >
-                    {channel.name}
-                  </option>
-                )
-              )}
-            </select>
-          </Field>
-
-          {/* 배송처 */}
-
-          <Field label="배송처">
-            <select
-              value={searchStore}
-              onChange={(e) =>
-                setSearchStore(
-                  e.target.value
-                )
-              }
-              style={inputStyle}
-              disabled={
-                !searchChannel
-              }
-            >
-              <option value="">
-                전체 배송처
-              </option>
-
-              {channelStores.map(
-                (store) => (
-                  <option
-                    key={
-                      store.id
-                    }
-                    value={
-                      store.id
-                    }
-                  >
-                    {store.name}
-                  </option>
-                )
-              )}
-            </select>
-          </Field>
-
-          {/* 주문일 */}
-
-          <Field label="주문일">
-            <input
-              type="date"
-              value={
-                searchOrderDate
-              }
-              onChange={(e) =>
-                setSearchOrderDate(
-                  e.target.value
-                )
-              }
-              style={inputStyle}
-            />
-          </Field>
-
-          {/* 상태 */}
-
-          <Field label="주문상태">
-            <select
-              value={searchStatus}
-              onChange={(e) =>
-                setSearchStatus(
-                  e.target.value
-                )
-              }
-              style={inputStyle}
-            >
-              <option value="">
-                전체 상태
-              </option>
-
-              {STATUS_LIST.map(
-                (status) => (
-                  <option
-                    key={status}
-                    value={status}
-                  >
-                    {status}
-                  </option>
-                )
-              )}
-            </select>
-          </Field>
-        </div>
-
-        {/* 검색버튼 */}
-
-        <div
-          style={{
-            display: "flex",
-            justifyContent:
-              "flex-end",
-            gap: "10px",
-            marginTop: "20px",
-          }}
-        >
-          <button
-            type="button"
-            onClick={handleReset}
-            style={
-              resetButtonStyle
-            }
-          >
-            초기화
-          </button>
-
-          <button
-            type="button"
-            onClick={handleSearch}
-            disabled={loading}
-            style={
-              searchButtonStyle
-            }
-          >
-            {loading
-              ? "조회 중..."
-              : "검색"}
-          </button>
-        </div>
-      </div>
-
-      {/* =================================================
-          주문목록
-      ================================================= */}
-
-      <div
-        style={{
-          background: "#ffffff",
-          border:
-            "1px solid #e5e7eb",
-          borderRadius: "16px",
-          overflow: "hidden",
-        }}
-      >
-
-        <div
-          style={{
-            padding:
-              "18px 22px",
-            borderBottom:
-              "1px solid #e5e7eb",
-            fontSize: "17px",
-            fontWeight: 700,
-          }}
-        >
-          주문 목록
-        </div>
-
-        <div
-          style={{
-            overflowX: "auto",
-          }}
-        >
-          <table
-            style={{
-              width: "100%",
-              borderCollapse:
-                "collapse",
-              minWidth:
-                "1300px",
-            }}
-          >
-            <thead>
-              <tr
+            <div>
+              <strong
                 style={{
-                  background:
-                    "#f8fafc",
+                  fontSize:
+                    "18px",
                 }}
               >
-                <th style={thStyle}>
-                  주문번호
-                </th>
+                주문 목록
+              </strong>
 
-                <th style={thStyle}>
-                  화주
-                </th>
+              <span
+                style={{
+                  marginLeft:
+                    "10px",
+                  color:
+                    "#64748b",
+                  fontSize:
+                    "13px",
+                }}
+              >
+                총{" "}
+                {
+                  filteredOrders.length
+                }
+                건
+              </span>
 
-                <th style={thStyle}>
-                  판매채널
-                </th>
-
-                <th style={thStyle}>
-                  배송처
-                </th>
-
-                <th style={thStyle}>
-                  주문일
-                </th>
-
-                <th style={thStyle}>
-                  배송일
-                </th>
-
-                <th
+              {selectedIds.length >
+                0 && (
+                <span
                   style={{
-                    ...thStyle,
-                    textAlign:
-                      "right",
+                    marginLeft:
+                      "10px",
+                    color:
+                      "#2563eb",
+                    fontSize:
+                      "13px",
+                    fontWeight:
+                      700,
                   }}
                 >
-                  수량
-                </th>
+                  {selectedIds.length.toLocaleString()}
+                  건 선택
+                </span>
+              )}
+            </div>
 
-                <th
-                  style={{
-                    ...thStyle,
-                    textAlign:
-                      "right",
-                  }}
-                >
-                  금액
-                </th>
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+              }}
+            >
+              {/* 일괄처리 버튼 */}
 
-                <th style={thStyle}>
-                  주문상태
-                </th>
+              <button
+                type="button"
+                onClick={
+                  handleBulkProcess
+                }
+                disabled={
+                  bulkProcessing ||
+                  selectedIds.length ===
+                    0
+                }
+                style={{
+                  border:
+                    "none",
+                  background:
+                    selectedIds.length >
+                      0 &&
+                    !bulkProcessing
+                      ? "#2563eb"
+                      : "#cbd5e1",
+                  color:
+                    "#ffffff",
+                  borderRadius:
+                    "8px",
+                  padding:
+                    "9px 15px",
+                  cursor:
+                    selectedIds.length >
+                      0 &&
+                    !bulkProcessing
+                      ? "pointer"
+                      : "default",
+                  fontWeight:
+                    700,
+                  fontSize:
+                    "13px",
+                }}
+              >
+                {bulkProcessing
+                  ? "일괄처리 중..."
+                  : `선택 주문 일괄처리${
+                      selectedIds.length >
+                      0
+                        ? ` (${selectedIds.length})`
+                        : ""
+                    }`}
+              </button>
 
-                <th style={thStyle}>
-                  WMS
-                </th>
-              </tr>
-            </thead>
+              {/* 새로고침 */}
 
-            <tbody>
-              {orders.map(
-                (order) => (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedIds([]);
+                  loadData();
+                }}
+                disabled={
+                  loading ||
+                  bulkProcessing
+                }
+                style={{
+                  border:
+                    "1px solid #d1d5db",
+                  background:
+                    "#ffffff",
+                  borderRadius:
+                    "8px",
+                  padding:
+                    "8px 13px",
+                  cursor:
+                    "pointer",
+                  fontWeight:
+                    700,
+                }}
+              >
+                새로고침
+              </button>
+            </div>
+          </div>
+
+          {loading ? (
+            <div
+              style={{
+                padding:
+                  "70px",
+                textAlign:
+                  "center",
+                color:
+                  "#94a3b8",
+              }}
+            >
+              주문 데이터를
+              불러오는 중입니다.
+            </div>
+          ) : (
+            <div
+              style={{
+                overflowX:
+                  "auto",
+              }}
+            >
+              <table
+                style={{
+                  width:
+                    "100%",
+                  minWidth:
+                    "1160px",
+                  borderCollapse:
+                    "collapse",
+                }}
+              >
+                <thead>
                   <tr
-                    key={
-                      order.id
-                    }
                     style={{
-                      borderTop:
-                        "1px solid #f1f5f9",
+                      background:
+                        "#f8fafc",
                     }}
                   >
-                    <td
-                      style={
-                        tdStyle
-                      }
+                    {/* 전체 선택 */}
+
+                    <th
+                      style={{
+                        ...thStyle,
+                        width:
+                          "55px",
+                        textAlign:
+                          "center",
+                      }}
                     >
-                      <strong>
-                        {
-                          order.order_number
+                      <input
+                        type="checkbox"
+                        checked={
+                          allFilteredSelected
                         }
-                      </strong>
-                    </td>
-
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        getCustomerName(
-                          order.customer_id
-                        )
-                      }
-                    </td>
-
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        getChannelName(
-                          order.sales_channel_id
-                        )
-                      }
-                    </td>
-
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        getStoreName(
-                          order.store_id
-                        )
-                      }
-                    </td>
-
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        order.order_date
-                      }
-                    </td>
-
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        order.delivery_date ??
-                        "-"
-                      }
-                    </td>
-
-                    <td
-                      style={{
-                        ...tdStyle,
-                        textAlign:
-                          "right",
-                      }}
-                    >
-                      {(
-                        order.total_qty ??
-                        0
-                      ).toLocaleString()}
-                    </td>
-
-                    <td
-                      style={{
-                        ...tdStyle,
-                        textAlign:
-                          "right",
-                      }}
-                    >
-                      {(
-                        order.total_amount ??
-                        0
-                      ).toLocaleString()}
-                      원
-                    </td>
-
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      <StatusBadge
-                        status={
-                          order.status
+                        onChange={(
+                          e
+                        ) =>
+                          handleSelectAll(
+                            e.target
+                              .checked
+                          )
+                        }
+                        disabled={
+                          bulkProcessing ||
+                          filteredSelectableIds.length ===
+                            0
                         }
                       />
-                    </td>
+                    </th>
 
-                    <td
+                    <th
                       style={
-                        tdStyle
+                        thStyle
                       }
                     >
-                      {
-                        order.wms_sync_status ??
-                        "-"
-                      }
-                    </td>
-                  </tr>
-                )
-              )}
+                      주문번호
+                    </th>
 
-              {orders.length ===
-                0 && (
-                <tr>
-                  <td
-                    colSpan={10}
-                    style={{
-                      padding:
-                        "60px",
-                      textAlign:
-                        "center",
-                      color:
-                        "#94a3b8",
-                    }}
-                  >
-                    조회된 주문이 없습니다.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+                    <th
+                      style={
+                        thStyle
+                      }
+                    >
+                      주문일
+                    </th>
+
+                    <th
+                      style={
+                        thStyle
+                      }
+                    >
+                      거래처
+                    </th>
+
+                    <th
+                      style={
+                        thStyle
+                      }
+                    >
+                      채널
+                    </th>
+
+                    <th
+                      style={
+                        thStyle
+                      }
+                    >
+                      상품
+                    </th>
+
+                    <th
+                      style={{
+                        ...thStyle,
+                        textAlign:
+                          "right",
+                      }}
+                    >
+                      수량
+                    </th>
+
+                    <th
+                      style={
+                        thStyle
+                      }
+                    >
+                      주문상태
+                    </th>
+
+                    <th
+                      style={
+                        thStyle
+                      }
+                    >
+                      출고요청
+                    </th>
+
+                    <th
+                      style={
+                        thStyle
+                      }
+                    >
+                      처리
+                    </th>
+
+                    <th
+                      style={
+                        thStyle
+                      }
+                    >
+                      상세
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredOrders.map(
+                    (order) => {
+                      const customer =
+                        order.customer_id
+                          ? customerMap.get(
+                              order.customer_id
+                            )
+                          : null;
+
+                      const info =
+                        itemMap.get(
+                          order.id
+                        ) || {
+                          count: 0,
+                          quantity: 0,
+                        };
+
+                      const currentStatus =
+                        order.status ||
+                        "접수";
+
+                      const processing =
+                        processingId ===
+                        order.id;
+
+                      const selectable =
+                        isBulkProcessable(
+                          order
+                        );
+
+                      return (
+                        <tr
+                          key={
+                            order.id
+                          }
+                        >
+                          {/* 선택 */}
+
+                          <td
+                            style={{
+                              ...tdStyle,
+                              width:
+                                "55px",
+                              textAlign:
+                                "center",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(
+                                order.id
+                              )}
+                              disabled={
+                                !selectable ||
+                                processing ||
+                                bulkProcessing
+                              }
+                              onChange={(
+                                e
+                              ) =>
+                                handleSelectOrder(
+                                  order.id,
+                                  e.target
+                                    .checked
+                                )
+                              }
+                            />
+                          </td>
+
+                          {/* 주문번호 */}
+
+                          <td
+                            style={{
+                              ...tdStyle,
+                              fontWeight:
+                                700,
+                            }}
+                          >
+                            {order.order_no ||
+                              order.order_number ||
+                              order.source_order_number ||
+                              "-"}
+                          </td>
+
+                          {/* 주문일 */}
+
+                          <td
+                            style={
+                              tdStyle
+                            }
+                          >
+                            {formatDate(
+                              order.order_date
+                            )}
+                          </td>
+
+                          {/* 거래처 */}
+
+                          <td
+                            style={{
+                              ...tdStyle,
+                              fontWeight:
+                                700,
+                            }}
+                          >
+                            <div>
+                              {customer?.name ||
+                                "-"}
+                            </div>
+
+                            {customer?.code && (
+                              <div
+                                style={{
+                                  marginTop:
+                                    "4px",
+                                  color:
+                                    "#94a3b8",
+                                  fontSize:
+                                    "11px",
+                                }}
+                              >
+                                {
+                                  customer.code
+                                }
+                              </div>
+                            )}
+                          </td>
+
+                          {/* 채널 */}
+
+                          <td
+                            style={
+                              tdStyle
+                            }
+                          >
+                            {getChannelName(
+                              order.channel
+                            )}
+                          </td>
+
+                          {/* 상품 */}
+
+                          <td
+                            style={
+                              tdStyle
+                            }
+                          >
+                            {info.count}
+                            종
+                          </td>
+
+                          {/* 수량 */}
+
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign:
+                                "right",
+                              fontWeight:
+                                700,
+                            }}
+                          >
+                            {(
+                              order.total_qty ??
+                              info.quantity
+                            ).toLocaleString()}
+                          </td>
+
+                          {/* 주문상태 */}
+
+                          <td
+                            style={
+                              tdStyle
+                            }
+                          >
+                            <StatusBadge
+                              status={
+                                currentStatus
+                              }
+                            />
+                          </td>
+
+                          {/* 출고요청 */}
+
+                          <td
+                            style={
+                              tdStyle
+                            }
+                          >
+                            {order.shipment_requested ===
+                            true ? (
+                              <span
+                                style={{
+                                  display:
+                                    "inline-block",
+                                  padding:
+                                    "6px 10px",
+                                  borderRadius:
+                                    "999px",
+                                  background:
+                                    "#dcfce7",
+                                  color:
+                                    "#15803d",
+                                  fontSize:
+                                    "12px",
+                                  fontWeight:
+                                    700,
+                                }}
+                              >
+                                요청완료
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  color:
+                                    "#94a3b8",
+                                  fontSize:
+                                    "12px",
+                                }}
+                              >
+                                미요청
+                              </span>
+                            )}
+                          </td>
+
+                          {/* 처리 */}
+
+                          <td
+                            style={{
+                              ...tdStyle,
+                              minWidth:
+                                "220px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display:
+                                  "flex",
+                                gap:
+                                  "6px",
+                                flexWrap:
+                                  "wrap",
+                              }}
+                            >
+                              {/* 접수 → 확인 */}
+
+                              {currentStatus ===
+                                "접수" && (
+                                <ActionButton
+                                  label="확인"
+                                  onClick={() =>
+                                    updateOrderStatus(
+                                      order,
+                                      "확인"
+                                    )
+                                  }
+                                  disabled={
+                                    processing ||
+                                    bulkProcessing
+                                  }
+                                />
+                              )}
+
+                              {/* 확인 → 확정 */}
+
+                              {currentStatus ===
+                                "확인" && (
+                                <ActionButton
+                                  label="확정"
+                                  onClick={() =>
+                                    updateOrderStatus(
+                                      order,
+                                      "확정"
+                                    )
+                                  }
+                                  disabled={
+                                    processing ||
+                                    bulkProcessing
+                                  }
+                                />
+                              )}
+
+                              {/* 확정 → 출고 요청 */}
+
+                              {currentStatus ===
+                                "확정" &&
+                                order.shipment_requested !==
+                                  true && (
+                                  <ActionButton
+                                    label="출고 요청"
+                                    onClick={() =>
+                                      requestShipment(
+                                        order
+                                      )
+                                    }
+                                    disabled={
+                                      processing ||
+                                      bulkProcessing
+                                    }
+                                  />
+                                )}
+
+                              {processing && (
+                                <span
+                                  style={{
+                                    alignSelf:
+                                      "center",
+                                    color:
+                                      "#64748b",
+                                    fontSize:
+                                      "12px",
+                                  }}
+                                >
+                                  처리중...
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* 상세 */}
+
+                          <td
+                            style={
+                              tdStyle
+                            }
+                          >
+                            <Link
+                              href={`/orders/${order.id}`}
+                              style={{
+                                color:
+                                  "#2563eb",
+                                textDecoration:
+                                  "none",
+                                fontWeight:
+                                  700,
+                              }}
+                            >
+                              상세 →
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  )}
+
+                  {filteredOrders.length ===
+                    0 && (
+                    <tr>
+                      <td
+                        colSpan={11}
+                        style={{
+                          padding:
+                            "70px",
+                          textAlign:
+                            "center",
+                          color:
+                            "#94a3b8",
+                        }}
+                      >
+                        {orders.length ===
+                        0
+                          ? "등록된 주문이 없습니다."
+                          : "검색 조건에 맞는 주문이 없습니다."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </section>
+    </main>
   );
 }
 
-/*
- * =====================================================
- * FIELD
- * =====================================================
- */
+/* =========================================================
+   MENU
+========================================================= */
 
-function Field({
+function Menu({
+  href,
   label,
-  children,
+  icon,
+  active = false,
 }: {
+  href: string;
   label: string;
-  children: React.ReactNode;
+  icon: string;
+  active?: boolean;
 }) {
   return (
-    <div>
-      <label
+    <Link
+      href={href}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "13px",
+        padding:
+          "13px 14px",
+        borderRadius:
+          "10px",
+        color: active
+          ? "#ffffff"
+          : "#cbd5e1",
+        background: active
+          ? "#2563eb"
+          : "transparent",
+        textDecoration:
+          "none",
+        fontSize:
+          "15px",
+        fontWeight:
+          active ? 700 : 500,
+      }}
+    >
+      <span
         style={{
-          display: "block",
-          marginBottom:
-            "7px",
-          fontSize: "13px",
-          fontWeight: 700,
-          color: "#374151",
+          width: "20px",
+          textAlign:
+            "center",
         }}
       >
-        {label}
-      </label>
+        {icon}
+      </span>
 
-      {children}
-    </div>
+      {label}
+    </Link>
   );
 }
 
-/*
- * =====================================================
- * STATUS
- * =====================================================
- */
+/* =========================================================
+   ACTION BUTTON
+========================================================= */
+
+function ActionButton({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        console.log(
+          "버튼 클릭:",
+          label
+        );
+
+        onClick();
+      }}
+      disabled={disabled}
+      style={{
+        border: "none",
+        borderRadius:
+          "7px",
+        padding:
+          "8px 12px",
+        background:
+          disabled
+            ? "#cbd5e1"
+            : "#2563eb",
+        color:
+          "#ffffff",
+        cursor:
+          disabled
+            ? "default"
+            : "pointer",
+        fontSize:
+          "12px",
+        fontWeight:
+          700,
+        whiteSpace:
+          "nowrap",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/* =========================================================
+   STATUS BADGE
+========================================================= */
 
 function StatusBadge({
   status,
 }: {
-  status: string;
+  status: string | null;
 }) {
+  const value =
+    status || "접수";
+
   let background =
-    "#f1f5f9";
+    "#eff6ff";
 
   let color =
-    "#475569";
+    "#2563eb";
 
-  if (
-    status ===
-    "수집완료"
-  ) {
-    background =
-      "#dbeafe";
-    color =
-      "#1d4ed8";
-  }
-
-  if (
-    status ===
-    "출고대기"
-  ) {
+  if (value === "확인") {
     background =
       "#fef3c7";
+
     color =
-      "#92400e";
+      "#b45309";
   }
 
-  if (
-    status ===
-    "출고완료"
-  ) {
+  if (value === "확정") {
     background =
       "#dcfce7";
+
     color =
-      "#166534";
+      "#15803d";
   }
 
-  if (
-    status ===
-    "배송완료"
-  ) {
-    background =
-      "#d1fae5";
-    color =
-      "#047857";
-  }
-
-  if (
-    status ===
-    "취소"
-  ) {
+  if (value === "취소") {
     background =
       "#fee2e2";
+
     color =
       "#b91c1c";
   }
@@ -1040,103 +2232,111 @@ function StatusBadge({
         display:
           "inline-block",
         padding:
-          "5px 9px",
+          "6px 11px",
         borderRadius:
           "999px",
         background,
         color,
         fontSize:
           "12px",
-        fontWeight: 700,
+        fontWeight:
+          700,
       }}
     >
-      {status}
+      {value}
     </span>
   );
 }
 
-/*
- * =====================================================
- * STYLE
- * =====================================================
- */
+/* =========================================================
+   CHANNEL
+========================================================= */
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  minHeight: "43px",
-  boxSizing:
-    "border-box",
-  padding:
-    "9px 11px",
-  border:
-    "1px solid #d1d5db",
-  borderRadius:
-    "8px",
-  background:
-    "#ffffff",
-  color:
-    "#111827",
-  fontSize:
-    "14px",
-};
+function getChannelName(
+  channel: string | null
+) {
+  const channels: Record<
+    string,
+    string
+  > = {
+    oliveyoung:
+      "올리브영",
 
-const thStyle: React.CSSProperties = {
+    daiso:
+      "다이소",
+
+    convenience:
+      "편의점",
+
+    discount:
+      "할인점",
+
+    supermarket:
+      "대형마트",
+
+    online:
+      "온라인",
+  };
+
+  return channel
+    ? channels[
+        channel
+      ] || channel
+    : "-";
+}
+
+/* =========================================================
+   DATE
+========================================================= */
+
+function formatDate(
+  value: string | null
+) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Date(
+    value
+  ).toLocaleDateString(
+    "ko-KR"
+  );
+}
+
+/* =========================================================
+   TABLE STYLE
+========================================================= */
+
+const thStyle = {
   padding:
-    "13px 14px",
+    "14px 16px",
+
   textAlign:
-    "left",
+    "left" as const,
+
   fontSize:
     "13px",
-  fontWeight: 700,
+
   color:
-    "#475569",
-  whiteSpace:
-    "nowrap",
+    "#64748b",
+
+  fontWeight:
+    700,
+
+  borderBottom:
+    "1px solid #e5e7eb",
 };
 
-const tdStyle: React.CSSProperties = {
+const tdStyle = {
   padding:
-    "13px 14px",
+    "15px 16px",
+
   fontSize:
-    "14px",
-  color:
-    "#334155",
-  whiteSpace:
-    "nowrap",
+    "13px",
+
+  borderBottom:
+    "1px solid #f1f5f9",
 };
 
-const searchButtonStyle: React.CSSProperties = {
-  border:
-    "none",
-  borderRadius:
-    "8px",
-  padding:
-    "11px 25px",
-  background:
-    "#2563eb",
-  color:
-    "#ffffff",
-  fontSize:
-    "14px",
-  fontWeight: 700,
-  cursor:
-    "pointer",
-};
 
-const resetButtonStyle: React.CSSProperties = {
-  border:
-    "1px solid #d1d5db",
-  borderRadius:
-    "8px",
-  padding:
-    "11px 20px",
-  background:
-    "#ffffff",
-  color:
-    "#374151",
-  fontSize:
-    "14px",
-  fontWeight: 700,
-  cursor:
-    "pointer",
-};
+

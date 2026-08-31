@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "@/app/components/Sidebar";
 import { createClient } from "@/lib/supabase/client";
-import OrderList from "./OrderList";
 
 const supabase = createClient();
 
@@ -994,7 +993,593 @@ export default function OrdersPage() {
       {/* ===================================================
           SIDEBAR
       =================================================== */}
-<Sidebar />
+
+            <aside
+        style={{
+          width: "230px",
+          minHeight: "100vh",
+          background: "#0f172a",
+          color: "#ffffff",
+          padding: "20px 12px",
+          flexShrink: 0,
+        }}
+      >
+        {/* LOGO */}
+        <div
+          style={{
+            padding: "0 12px 20px",
+            borderBottom:
+              "1px solid rgba(255,255,255,0.1)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "10px",
+              fontWeight: 700,
+              letterSpacing: "1.8px",
+              color: "#94a3b8",
+            }}
+          >
+            SONGLIM LOGISTICS
+          </div>
+
+          <div
+            style={{
+              marginTop: "7px",
+              fontSize: "20px",
+              fontWeight: 900,
+            }}
+          >
+            송림물류 OMS
+          </div>
+        </div>
+
+        {/* MENU */}
+        <nav
+          style={{
+            marginTop: "16px",
+          }}
+        >
+          {/* 대시보드 */}
+          <Link
+            href="/"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "44px",
+              padding: "0 12px",
+              borderRadius: "8px",
+              color: pathname === "/"
+                ? "#ffffff"
+                : "#cbd5e1",
+              background:
+                pathname === "/"
+                  ? "#2563eb"
+                  : "transparent",
+              textDecoration: "none",
+              fontSize: "14px",
+              fontWeight: 700,
+              marginBottom: "4px",
+            }}
+          >
+            <span
+              style={{
+                width: "20px",
+                marginRight: "10px",
+                textAlign: "center",
+              }}
+            >
+              ▦
+            </span>
+
+            대시보드
+          </Link>
+
+          {/* 주문관리 */}
+          <div>
+            <button
+              type="button"
+              onClick={() =>
+                setOpenMenu(
+                  openMenu === "주문관리"
+                    ? null
+                    : "주문관리"
+                )
+              }
+              style={{
+                width: "100%",
+                height: "44px",
+                border: "none",
+                borderRadius: "8px",
+                background:
+                  pathname.startsWith("/orders")
+                    ? "rgba(255,255,255,0.10)"
+                    : "transparent",
+                color: "#ffffff",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 12px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: 700,
+                textAlign: "left",
+              }}
+            >
+              <span
+                style={{
+                  width: "20px",
+                  marginRight: "10px",
+                  textAlign: "center",
+                }}
+              >
+                ▤
+              </span>
+
+              <span style={{ flex: 1 }}>
+                주문관리
+              </span>
+
+              <span
+                style={{
+                  color: "#94a3b8",
+                  fontSize: "12px",
+                }}
+              >
+                {openMenu === "주문관리"
+                  ? "−"
+                  : "+"}
+              </span>
+            </button>
+
+            {openMenu === "주문관리" && (
+              <div
+                style={{
+                  marginLeft: "16px",
+                  paddingLeft: "8px",
+                  borderLeft:
+                    "1px solid rgba(255,255,255,0.10)",
+                }}
+              >
+                {[
+                  {
+                    name: "전체 주문",
+                    href: "/orders",
+                  },
+                  {
+                    name: "신규 주문",
+                    href: "/orders/new",
+                  },
+                  {
+                    name: "주문 확정",
+                    href: "/orders/confirmed",
+                  },
+                  {
+                    name: "주문 취소",
+                    href: "/orders/cancelled",
+                  },
+                  {
+                    name: "주문 조회",
+                    href: "/orders/search",
+                  },
+                ].map((item) => {
+                  const active =
+                    pathname === item.href ||
+                    pathname.startsWith(
+                      `${item.href}/`
+                    );
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        minHeight: "38px",
+                        padding: "0 12px",
+                        borderRadius: "6px",
+                        color: active
+                          ? "#ffffff"
+                          : "#94a3b8",
+                        background: active
+                          ? "#2563eb"
+                          : "transparent",
+                        textDecoration: "none",
+                        fontSize: "13px",
+                        fontWeight: active
+                          ? 700
+                          : 500,
+                      }}
+                    >
+                      <span
+                        style={{
+                          marginRight: "8px",
+                          fontSize: "8px",
+                        }}
+                      >
+                        ●
+                      </span>
+
+                      {item.name}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 주문수집 */}
+          <div style={{ marginTop: "4px" }}>
+            <button
+              type="button"
+              onClick={() =>
+                setOpenMenu(
+                  openMenu === "주문수집"
+                    ? null
+                    : "주문수집"
+                )
+              }
+              style={{
+                width: "100%",
+                height: "44px",
+                border: "none",
+                borderRadius: "8px",
+                background:
+                  pathname.startsWith(
+                    "/order-collection"
+                  )
+                    ? "rgba(255,255,255,0.10)"
+                    : "transparent",
+                color: "#cbd5e1",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 12px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: 700,
+                textAlign: "left",
+              }}
+            >
+              <span
+                style={{
+                  width: "20px",
+                  marginRight: "10px",
+                  textAlign: "center",
+                }}
+              >
+                ↻
+              </span>
+
+              <span style={{ flex: 1 }}>
+                주문수집
+              </span>
+
+              <span
+                style={{
+                  color: "#94a3b8",
+                  fontSize: "12px",
+                }}
+              >
+                {openMenu === "주문수집"
+                  ? "−"
+                  : "+"}
+              </span>
+            </button>
+
+            {openMenu === "주문수집" && (
+              <div
+                style={{
+                  marginLeft: "16px",
+                  paddingLeft: "8px",
+                  borderLeft:
+                    "1px solid rgba(255,255,255,0.10)",
+                }}
+              >
+                <Link
+                  href="/order-collection"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    minHeight: "38px",
+                    padding: "0 12px",
+                    color: "#94a3b8",
+                    textDecoration: "none",
+                    fontSize: "13px",
+                  }}
+                >
+                  ● 판매채널별 주문수집
+                </Link>
+
+                <Link
+                  href="/order-collection/history"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    minHeight: "38px",
+                    padding: "0 12px",
+                    color: "#94a3b8",
+                    textDecoration: "none",
+                    fontSize: "13px",
+                  }}
+                >
+                  ● 수집 이력
+                </Link>
+
+                <Link
+                  href="/order-collection/errors"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    minHeight: "38px",
+                    padding: "0 12px",
+                    color: "#94a3b8",
+                    textDecoration: "none",
+                    fontSize: "13px",
+                  }}
+                >
+                  ● 수집 오류
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* 판매채널관리 */}
+          <div style={{ marginTop: "4px" }}>
+            <button
+              type="button"
+              onClick={() =>
+                setOpenMenu(
+                  openMenu === "판매채널관리"
+                    ? null
+                    : "판매채널관리"
+                )
+              }
+              style={{
+                width: "100%",
+                height: "44px",
+                border: "none",
+                borderRadius: "8px",
+                background:
+                  pathname.startsWith(
+                    "/sales-channels"
+                  ) ||
+                  pathname.startsWith(
+                    "/sales-channel-groups"
+                  )
+                    ? "rgba(255,255,255,0.10)"
+                    : "transparent",
+                color: "#cbd5e1",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 12px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: 700,
+                textAlign: "left",
+              }}
+            >
+              <span
+                style={{
+                  width: "20px",
+                  marginRight: "10px",
+                  textAlign: "center",
+                }}
+              >
+                ◎
+              </span>
+
+              <span style={{ flex: 1 }}>
+                판매채널관리
+              </span>
+
+              <span
+                style={{
+                  color: "#94a3b8",
+                  fontSize: "12px",
+                }}
+              >
+                {openMenu === "판매채널관리"
+                  ? "−"
+                  : "+"}
+              </span>
+            </button>
+
+            {openMenu === "판매채널관리" && (
+              <div
+                style={{
+                  marginLeft: "16px",
+                  paddingLeft: "8px",
+                  borderLeft:
+                    "1px solid rgba(255,255,255,0.10)",
+                }}
+              >
+                <Link
+                  href="/sales-channels"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    minHeight: "38px",
+                    padding: "0 12px",
+                    color: "#94a3b8",
+                    textDecoration: "none",
+                    fontSize: "13px",
+                  }}
+                >
+                  ● 판매채널
+                </Link>
+
+                <Link
+                  href="/sales-channel-groups"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    minHeight: "38px",
+                    padding: "0 12px",
+                    color: "#94a3b8",
+                    textDecoration: "none",
+                    fontSize: "13px",
+                  }}
+                >
+                  ● 채널 그룹
+                </Link>
+
+                <Link
+                  href="/sales-channels/api"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    minHeight: "38px",
+                    padding: "0 12px",
+                    color: "#94a3b8",
+                    textDecoration: "none",
+                    fontSize: "13px",
+                  }}
+                >
+                  ● API 연결관리
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* 거래처관리 */}
+          <div style={{ marginTop: "4px" }}>
+            <button
+              type="button"
+              onClick={() =>
+                setOpenMenu(
+                  openMenu === "거래처관리"
+                    ? null
+                    : "거래처관리"
+                )
+              }
+              style={{
+                width: "100%",
+                height: "44px",
+                border: "none",
+                borderRadius: "8px",
+                background:
+                  pathname.startsWith(
+                    "/customers"
+                  ) ||
+                  pathname.startsWith(
+                    "/customer-products"
+                  ) ||
+                  pathname.startsWith(
+                    "/delivery-targets"
+                  ) ||
+                  pathname.startsWith("/stores")
+                    ? "rgba(255,255,255,0.10)"
+                    : "transparent",
+                color: "#cbd5e1",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 12px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: 700,
+                textAlign: "left",
+              }}
+            >
+              <span
+                style={{
+                  width: "20px",
+                  marginRight: "10px",
+                  textAlign: "center",
+                }}
+              >
+                ▣
+              </span>
+
+              <span style={{ flex: 1 }}>
+                거래처관리
+              </span>
+
+              <span
+                style={{
+                  color: "#94a3b8",
+                  fontSize: "12px",
+                }}
+              >
+                {openMenu === "거래처관리"
+                  ? "−"
+                  : "+"}
+              </span>
+            </button>
+
+            {openMenu === "거래처관리" && (
+              <div
+                style={{
+                  marginLeft: "16px",
+                  paddingLeft: "8px",
+                  borderLeft:
+                    "1px solid rgba(255,255,255,0.10)",
+                }}
+              >
+                <Link
+                  href="/customers"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    minHeight: "38px",
+                    padding: "0 12px",
+                    color: "#94a3b8",
+                    textDecoration: "none",
+                    fontSize: "13px",
+                  }}
+                >
+                  ● 거래처
+                </Link>
+
+                <Link
+                  href="/customer-products"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    minHeight: "38px",
+                    padding: "0 12px",
+                    color: "#94a3b8",
+                    textDecoration: "none",
+                    fontSize: "13px",
+                  }}
+                >
+                  ● 거래처 상품
+                </Link>
+
+                <Link
+                  href="/delivery-targets"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    minHeight: "38px",
+                    padding: "0 12px",
+                    color: "#94a3b8",
+                    textDecoration: "none",
+                    fontSize: "13px",
+                  }}
+                >
+                  ● 납품처
+                </Link>
+
+                <Link
+                  href="/stores"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    minHeight: "38px",
+                    padding: "0 12px",
+                    color: "#94a3b8",
+                    textDecoration: "none",
+                    fontSize: "13px",
+                  }}
+                >
+                  ● 매장
+                </Link>
+              </div>
+            )}
+          </div>
+        </nav>
+      </aside>
+      <Sidebar />
 
       {/* ===================================================
           MAIN
@@ -2232,5 +2817,4 @@ const tdStyle = {
   borderBottom:
     "1px solid #f1f5f9",
 };
-
 
