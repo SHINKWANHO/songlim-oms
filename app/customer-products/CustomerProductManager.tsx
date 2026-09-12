@@ -7,7 +7,6 @@ type Customer = {
   id: string;
   code: string;
   name: string;
-  channel: string;
   active: boolean;
 };
 
@@ -237,8 +236,7 @@ export default function CustomerProductManager({
           customers (
             id,
             code,
-            name,
-            channel
+            name
           ),
           products (
             id,
@@ -318,8 +316,7 @@ export default function CustomerProductManager({
         customers (
           id,
           code,
-          name,
-          channel
+          name
         ),
         products (
           id,
@@ -398,112 +395,6 @@ export default function CustomerProductManager({
         display: "flex",
       }}
     >
-      {/* SIDEBAR */}
-
-      <aside
-        style={{
-          width: "240px",
-          minHeight: "100vh",
-          background: "#111827",
-          color: "#fff",
-          padding:
-            "28px 18px",
-          flexShrink: 0,
-        }}
-      >
-        <div
-          style={{
-            padding:
-              "0 12px 28px",
-            borderBottom:
-              "1px solid rgba(255,255,255,.1)",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "13px",
-              color: "#94a3b8",
-              fontWeight: 700,
-              letterSpacing:
-                "1.5px",
-            }}
-          >
-            SONGLIM LOGISTICS
-          </div>
-
-          <div
-            style={{
-              marginTop: "8px",
-              fontSize: "23px",
-              fontWeight: 800,
-            }}
-          >
-            송림물류 OMS
-          </div>
-        </div>
-
-        <nav
-          style={{
-            marginTop: "24px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "6px",
-          }}
-        >
-          <MenuItem
-            href="/"
-            label="대시보드"
-            icon="▦"
-          />
-
-          <MenuItem
-            href="/customers"
-            label="화주사 관리"
-            icon="▣"
-          />
-
-          <MenuItem
-                      href="/delivery-targets"
-                      label="납품처 관리" icon={""}          />
-
-          <MenuItem
-            href="/products"
-            label="상품 관리"
-            icon="□"
-          />
-
-          <MenuItem
-            href="/customer-products"
-            label="화주사 상품 매핑"
-            icon="↔"
-            active
-          />
-
-          <MenuItem
-            href="/orders"
-            label="주문 관리"
-            icon="≡"
-          />
-
-          <MenuItem
-            href="/collection"
-            label="주문 수집"
-            icon="↓"
-          />
-
-          <MenuItem
-            href="/outbound"
-            label="출고 관리"
-            icon="→"
-          />
-
-          <MenuItem
-            href="/inventory"
-            label="재고 관리"
-            icon="▤"
-          />
-        </nav>
-      </aside>
 
       {/* CONTENT */}
 
@@ -1153,57 +1044,6 @@ export default function CustomerProductManager({
 /* =========================================================
    COMPONENTS
 ========================================================= */
-
-function MenuItem({
-  href,
-  label,
-  icon,
-  active = false,
-}: {
-  href: string;
-  label: string;
-  icon: string;
-  active?: boolean;
-}) {
-  return (
-    <a
-      href={href}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "13px",
-        padding: "13px 14px",
-        borderRadius: "10px",
-        color:
-          active
-            ? "#fff"
-            : "#cbd5e1",
-        background:
-          active
-            ? "#2563eb"
-            : "transparent",
-        textDecoration:
-          "none",
-        fontSize: "15px",
-        fontWeight:
-          active
-            ? 700
-            : 500,
-      }}
-    >
-      <span
-        style={{
-          width: "20px",
-          textAlign: "center",
-        }}
-      >
-        {icon}
-      </span>
-
-      {label}
-    </a>
-  );
-}
 
 function FormField({
   label,

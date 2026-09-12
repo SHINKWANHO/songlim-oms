@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import Sidebar from "@/app/components/Sidebar";
 import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
@@ -696,6 +695,8 @@ export default function OrderList({
           const now =
             new Date().toISOString();
 
+
+
           /* =============================================
              접수 → 확인
           ============================================= */
@@ -808,6 +809,83 @@ export default function OrderList({
         }
       }
 
+      async function handleBulkCancel() {
+  if (bulkProcessing || selectedIds.length === 0) {
+    return;
+  }
+
+  const selectedOrders = orders.filter(
+    (order) =>
+      selectedIds.includes(order.id) &&
+      order.status !== "취소" &&
+      order.shipment_requested !== true
+  );
+
+  if (selectedOrders.length === 0) {
+    alert("취소 가능한 주문이 없습니다.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `선택한 ${selectedOrders.length}건의 주문을 취소하시겠습니까?`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  setBulkProcessing(true);
+  setError("");
+
+  try {
+    const ids = selectedOrders.map(
+      (order) => order.id
+    );
+
+    const { error: updateError } =
+      await supabase
+        .from("orders")
+        .update({
+          status: "취소",
+        })
+        .in("id", ids);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    setOrders((prev) =>
+      prev.map((order) =>
+        ids.includes(order.id)
+          ? {
+              ...order,
+              status: "취소",
+            }
+          : order
+      )
+    );
+
+    setSelectedIds([]);
+
+    alert(
+      `${selectedOrders.length}건의 주문이 취소되었습니다.`
+    );
+  } catch (err) {
+    console.error(
+      "선택 주문 일괄취소 오류:",
+      err
+    );
+
+    setError(
+      err instanceof Error
+        ? `주문 취소 실패: ${err.message}`
+        : "주문 취소 중 오류가 발생했습니다."
+    );
+  } finally {
+    setBulkProcessing(false);
+  }
+}
+
       /* =================================================
          전체 처리 후 DB에서 다시 조회
 
@@ -890,6 +968,90 @@ export default function OrderList({
 
     return map;
   }, [items]);
+
+  /* =======================================================
+   선택 주문 일괄 취소
+======================================================= */
+
+async function handleBulkCancel() {
+  if (
+    bulkProcessing ||
+    selectedIds.length === 0
+  ) {
+    return;
+  }
+
+  const cancelableOrders = orders.filter(
+    (order) =>
+      selectedIds.includes(order.id) &&
+      order.status !== "취소" &&
+      order.shipment_requested !== true
+  );
+
+  if (cancelableOrders.length === 0) {
+    alert("취소 가능한 주문이 없습니다.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `선택한 ${cancelableOrders.length}건의 주문을 취소하시겠습니까?`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  setBulkProcessing(true);
+  setError("");
+
+  try {
+    const ids = cancelableOrders.map(
+      (order) => order.id
+    );
+
+    const { error: updateError } =
+      await supabase
+        .from("orders")
+        .update({
+          status: "취소",
+        })
+        .in("id", ids);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    setOrders((prev) =>
+      prev.map((order) =>
+        ids.includes(order.id)
+          ? {
+              ...order,
+              status: "취소",
+            }
+          : order
+      )
+    );
+
+    setSelectedIds([]);
+
+    alert(
+      `${cancelableOrders.length}건의 주문이 취소되었습니다.`
+    );
+  } catch (err) {
+    console.error(
+      "일괄 주문 취소 오류:",
+      err
+    );
+
+    setError(
+      err instanceof Error
+        ? `주문 취소 실패: ${err.message}`
+        : "주문 취소 중 오류가 발생했습니다."
+    );
+  } finally {
+    setBulkProcessing(false);
+  }
+}
 
   /* =======================================================
      상태별 주문 수
@@ -1054,12 +1216,6 @@ export default function OrderList({
         display: "flex",
       }}
     >
-      {/* ===================================================
-          SIDEBAR
-      =================================================== */}
-
-            
-      <Sidebar />
 
       {/* ===================================================
           MAIN
@@ -1119,22 +1275,19 @@ export default function OrderList({
           </div>
 
           <Link
-            href="/orders/new"
-            style={{
-              background:
-                "#2563eb",
-              color: "#ffffff",
-              textDecoration:
-                "none",
-              padding:
-                "13px 20px",
-              borderRadius: "9px",
-              fontSize: "14px",
-              fontWeight: 700,
-            }}
-          >
-            + 주문 등록
-          </Link>
+  href="/orders/register"
+  style={{
+    background: "#2563eb",
+    color: "#ffffff",
+    textDecoration: "none",
+    padding: "12px 20px",
+    borderRadius: "10px",
+    fontWeight: 700,
+    fontSize: "14px",
+  }}
+>
+  + 주문 등록
+</Link>
         </header>
 
         {/* =================================================
@@ -1463,54 +1616,79 @@ export default function OrderList({
                 gap: "8px",
               }}
             >
-              {/* 일괄처리 버튼 */}
+            {/* 일괄처리 버튼 */}
 
-              <button
-                type="button"
-                onClick={
-                  handleBulkProcess
-                }
-                disabled={
-                  bulkProcessing ||
-                  selectedIds.length ===
-                    0
-                }
-                style={{
-                  border:
-                    "none",
-                  background:
-                    selectedIds.length >
-                      0 &&
-                    !bulkProcessing
-                      ? "#2563eb"
-                      : "#cbd5e1",
-                  color:
-                    "#ffffff",
-                  borderRadius:
-                    "8px",
-                  padding:
-                    "9px 15px",
-                  cursor:
-                    selectedIds.length >
-                      0 &&
-                    !bulkProcessing
-                      ? "pointer"
-                      : "default",
-                  fontWeight:
-                    700,
-                  fontSize:
-                    "13px",
-                }}
-              >
-                {bulkProcessing
-                  ? "일괄처리 중..."
-                  : `선택 주문 일괄처리${
-                      selectedIds.length >
-                      0
-                        ? ` (${selectedIds.length})`
-                        : ""
-                    }`}
-              </button>
+<button
+  type="button"
+  onClick={handleBulkProcess}
+  disabled={
+    bulkProcessing ||
+    selectedIds.length === 0
+  }
+  style={{
+    border: "none",
+    background:
+      selectedIds.length > 0 &&
+      !bulkProcessing
+        ? "#2563eb"
+        : "#cbd5e1",
+    color: "#ffffff",
+    borderRadius: "8px",
+    padding: "9px 15px",
+    cursor:
+      selectedIds.length > 0 &&
+      !bulkProcessing
+        ? "pointer"
+        : "default",
+    fontWeight: 700,
+    fontSize: "13px",
+  }}
+>
+  {bulkProcessing
+    ? "일괄처리 중..."
+    : `선택 주문 일괄처리${
+        selectedIds.length > 0
+          ? ` (${selectedIds.length})`
+          : ""
+      }`}
+</button>
+
+{/* 선택 주문 취소 */}
+
+<button
+  type="button"
+  onClick={handleBulkCancel}
+  disabled={
+    bulkProcessing ||
+    selectedIds.length === 0
+  }
+  style={{
+    border: "none",
+    background:
+      selectedIds.length > 0 &&
+      !bulkProcessing
+        ? "#dc2626"
+        : "#cbd5e1",
+    color: "#ffffff",
+    borderRadius: "8px",
+    padding: "9px 15px",
+    cursor:
+      selectedIds.length > 0 &&
+      !bulkProcessing
+        ? "pointer"
+        : "default",
+    fontWeight: 700,
+    fontSize: "13px",
+  }}
+>
+  {bulkProcessing
+    ? "처리 중..."
+    : `선택 주문 취소${
+        selectedIds.length > 0
+          ? ` (${selectedIds.length})`
+          : ""
+      }`}
+</button>
 
               {/* 새로고침 */}
 

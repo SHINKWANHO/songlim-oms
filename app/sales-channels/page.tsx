@@ -1,5 +1,4 @@
 "use client";
-"use client";
 
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
@@ -1017,156 +1016,254 @@ export default function SalesChannelsPage() {
         )}
 
         {/* ===================================================
-            FILTER
-        =================================================== */}
+    FILTER
+=================================================== */}
 
-        <section className="filter-card">
+<section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
 
-          <div className="filter-row">
+  {/* 상단 검색 필터 */}
+  <div className="grid grid-cols-1 gap-3 lg:grid-cols-[220px_240px_1fr]">
 
-            <select
-              value={
-                customerFilter
-              }
-              onChange={(e) =>
-                setCustomerFilter(
-                  e.target.value
-                )
-              }
-              className="filter-select"
-            >
-              <option value="전체">
-                전체 화주
-              </option>
+    {/* 화주사 */}
+    <select
+      value={customerFilter}
+      onChange={(e) =>
+        setCustomerFilter(e.target.value)
+      }
+      className="h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+    >
+      <option value="전체">
+        전체 화주
+      </option>
 
-              {customers.map(
-                (customer) => (
-                  <option
-                    key={
-                      customer.id
-                    }
-                    value={
-                      customer.name
-                    }
-                  >
-                    {
-                      customer.name
-                    }
-                  </option>
-                )
-              )}
-            </select>
+      {customers.map((customer) => (
+        <option
+          key={customer.id}
+          value={customer.name}
+        >
+          {customer.name}
+        </option>
+      ))}
+    </select>
 
-            <select
-              value={
-                groupFilter
-              }
-              onChange={(e) =>
-                setGroupFilter(
-                  e.target.value
-                )
-              }
-              className="filter-select"
-            >
-              <option value="전체">
-                전체 판매채널 그룹
-              </option>
 
-              {CHANNEL_GROUPS.map(
-                (group) => (
-                  <option
-                    key={group}
-                    value={group}
-                  >
-                    {group}
-                  </option>
-                )
-              )}
-            </select>
+    {/* 판매채널 그룹 */}
+    <select
+      value={groupFilter}
+      onChange={(e) =>
+        setGroupFilter(e.target.value)
+      }
+      className="h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+    >
+      <option value="전체">
+        전체 판매채널 그룹
+      </option>
 
-            <input
-              value={search}
-              onChange={(e) =>
-                setSearch(
-                  e.target.value
-                )
-              }
-              placeholder="화주, 판매채널 코드, 판매채널명 검색"
-              className="search-input"
-            />
+      {CHANNEL_GROUPS.map((group) => (
+        <option
+          key={group}
+          value={group}
+        >
+          {group}
+        </option>
+      ))}
+    </select>
 
-          </div>
 
-          <div className="group-buttons">
+    {/* 검색 */}
+    <input
+      value={search}
+      onChange={(e) =>
+        setSearch(e.target.value)
+      }
+      placeholder="화주, 판매채널 코드, 판매채널명 검색"
+      className="h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+    />
 
-            <FilterButton
-              active={
-                groupFilter ===
-                "전체"
-              }
-              onClick={() =>
-                setGroupFilter(
-                  "전체"
-                )
-              }
-            >
-              전체
-            </FilterButton>
+  </div>
 
-            {CHANNEL_GROUPS.map(
-              (group) => (
-                <FilterButton
-                  key={group}
-                  active={
-                    groupFilter ===
-                    group
-                  }
-                  onClick={() =>
-                    setGroupFilter(
-                      group
-                    )
-                  }
-                >
-                  {group}
-                </FilterButton>
-              )
-            )}
 
-          </div>
+  {/* 판매채널 그룹 빠른선택 */}
+  <div className="mt-5 border-t border-slate-100 pt-5">
 
-        </section>
+    <div className="mb-3 flex items-center justify-between">
 
-        {/* ===================================================
-            SUMMARY
-        =================================================== */}
+      <div>
+        <div className="text-sm font-black text-slate-800">
+          판매채널 그룹
+        </div>
 
-        <section className="summary-grid">
+        <div className="mt-1 text-xs text-slate-400">
+          그룹을 선택하면 해당 판매채널만 표시됩니다.
+        </div>
+      </div>
 
-          <SummaryCard
-            title="전체 판매채널"
-            value={
-              totalCount
-            }
-            description="현재 필터 기준 판매채널"
-          />
+      {groupFilter !== "전체" && (
+        <button
+          type="button"
+          onClick={() =>
+            setGroupFilter("전체")
+          }
+          className="text-xs font-bold text-blue-600 hover:text-blue-700"
+        >
+          필터 해제
+        </button>
+      )}
 
-          <SummaryCard
-            title="판매채널 그룹"
-            value={
-              groupCount
-            }
-            description="현재 등록된 그룹"
-          />
+    </div>
 
-          <SummaryCard
-            title="사용중 판매채널"
-            value={
-              activeCount
-            }
-            description="현재 사용중인 채널"
-          />
 
-        </section>
+    <div className="flex flex-wrap gap-2">
+
+      {/* 전체 */}
+      <button
+        type="button"
+        onClick={() =>
+          setGroupFilter("전체")
+        }
+        className={`rounded-lg border px-4 py-2 text-sm font-bold transition ${
+          groupFilter === "전체"
+            ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+            : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+        }`}
+      >
+        전체
+      </button>
+
+
+      {/* 그룹 */}
+      {CHANNEL_GROUPS.map((group) => (
+        <button
+          key={group}
+          type="button"
+          onClick={() =>
+            setGroupFilter(group)
+          }
+          className={`rounded-lg border px-4 py-2 text-sm font-bold transition ${
+            groupFilter === group
+              ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+              : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+          }`}
+        >
+          {group}
+        </button>
+      ))}
+
+    </div>
+
+  </div>
+
+</section>
+
+
+{/* ===================================================
+    SUMMARY
+=================================================== */}
+
+<section className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+
+  {/* 전체 판매채널 */}
+  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
+    <div className="flex items-start justify-between">
+
+      <div>
+        <div className="text-sm font-bold text-slate-500">
+          전체 판매채널
+        </div>
+
+        <div className="mt-3">
+          <span className="text-[32px] font-black leading-none text-slate-900">
+            {totalCount.toLocaleString()}
+          </span>
+
+          <span className="ml-1 text-sm font-bold text-slate-400">
+            개
+          </span>
+        </div>
+
+        <div className="mt-2 text-xs text-slate-400">
+          현재 필터 기준 판매채널
+        </div>
+      </div>
+
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-lg font-black text-blue-600">
+        ◎
+      </div>
+
+    </div>
+
+  </div>
+
+
+  {/* 판매채널 그룹 */}
+  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
+    <div className="flex items-start justify-between">
+
+      <div>
+        <div className="text-sm font-bold text-slate-500">
+          판매채널 그룹
+        </div>
+
+        <div className="mt-3">
+          <span className="text-[32px] font-black leading-none text-slate-900">
+            {groupCount.toLocaleString()}
+          </span>
+
+          <span className="ml-1 text-sm font-bold text-slate-400">
+            개
+          </span>
+        </div>
+
+        <div className="mt-2 text-xs text-slate-400">
+          현재 등록된 그룹
+        </div>
+      </div>
+
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-lg font-black text-slate-600">
+        ▦
+      </div>
+
+    </div>
+
+  </div>
+
+
+  {/* 사용중 판매채널 */}
+  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
+    <div className="flex items-start justify-between">
+
+      <div>
+        <div className="text-sm font-bold text-slate-500">
+          사용중 판매채널
+        </div>
+
+        <div className="mt-3">
+          <span className="text-[32px] font-black leading-none text-slate-900">
+            {activeCount.toLocaleString()}
+          </span>
+
+          <span className="ml-1 text-sm font-bold text-slate-400">
+            개
+          </span>
+        </div>
+
+        <div className="mt-2 text-xs text-slate-400">
+          현재 사용중인 채널
+        </div>
+      </div>
+
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-lg font-black text-emerald-600">
+        ✓
+      </div>
+
+    </div>
+
+  </div>
+
+</section>
 
         {/* ===================================================
             FORM

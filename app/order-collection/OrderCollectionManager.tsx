@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-
-const supabase = createClient();
 
 /* =========================================================
    TYPES
@@ -143,6 +142,15 @@ function getErrorMessage(error: unknown) {
 ========================================================= */
 
 export default function OrderCollectionManager() {
+  const supabase = useMemo(() => createClient(), []);
+  const searchParams =
+  useSearchParams();
+
+const queryTab =
+  searchParams.get("tab");
+
+const queryChannel =
+  searchParams.get("channel");  
   /* =======================================================
      TAB
   ======================================================= */
@@ -241,6 +249,88 @@ export default function OrderCollectionManager() {
     loadMasterData();
     loadRecentReservations();
   }, []);
+
+  /* =======================================================
+   URL → TAB 자동 선택
+======================================================= */
+
+useEffect(() => {
+  if (
+    queryTab ===
+    "collection"
+  ) {
+    setActiveTab(
+      "collection"
+    );
+  }
+
+  if (
+    queryTab ===
+    "reservation"
+  ) {
+    setActiveTab(
+      "reservation"
+    );
+  }
+}, [queryTab]);
+
+/* =======================================================
+   URL → 판매채널 자동 선택
+======================================================= */
+
+useEffect(() => {
+  if (!queryChannel) {
+    return;
+  }
+
+  if (
+    salesChannels.length === 0
+  ) {
+    return;
+  }
+
+  const matchedChannel =
+    salesChannels.find(
+      (channel) =>
+        channel.channel_code
+          ?.toUpperCase() ===
+        queryChannel.toUpperCase()
+    );
+
+  if (!matchedChannel) {
+    console.warn(
+      "URL 판매채널을 찾을 수 없습니다:",
+      queryChannel
+    );
+
+    return;
+  }
+
+  console.log(
+    "URL 판매채널 자동 선택:",
+    matchedChannel
+  );
+
+  if (
+    matchedChannel.customer_id
+  ) {
+    setCustomerId(
+      matchedChannel.customer_id
+    );
+  }
+
+  setSalesChannelId(
+    matchedChannel.id
+  );
+
+  setDeliveryTargetId("");
+  setDeliveryLocationId("");
+  setSelectedSlotId("");
+  setSlots([]);
+}, [
+  queryChannel,
+  salesChannels,
+]);
 
   /* =======================================================
      MASTER DATA LOAD
@@ -1095,54 +1185,85 @@ export default function OrderCollectionManager() {
   /* =======================================================
      COLLECTION
   ======================================================= */
+async function getSalesChannelIdByCode(channelCode: string) {
+  const candidateCodes =
+    channelCode.startsWith("C-")
+      ? [channelCode]
+      : [channelCode, `C-${channelCode}`];
 
-  /* =======================================================
+  const { data, error } = await supabase
+    .from("sales_channels")
+    .select("id, channel_code, channel_name, is_active")
+    .in("channel_code", candidateCodes)
+    .eq("is_active", true)
+    .limit(1);
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data || data.length === 0) {
+    throw new Error(
+      `${channelCode} 판매채널이 DB에 등록되어 있지 않습니다.`
+    );
+  }
+
+  return data[0].id;
+}
+
+/* =======================================================
    주문수집 - 채널별
 ======================================================= */
 
-async function collectOrders(
-  channelCode: string
-) {
+async function collectOrders(channelCode: string) {
   setMessage("");
   setErrorMessage("");
   setCollectingCode(channelCode);
 
   try {
-    const channel =
-      COLLECTION_CHANNELS.find(
-        (item) =>
-          item.code === channelCode
-      );
+    const channel = COLLECTION_CHANNELS.find(
+      (item) => item.code === channelCode
+    );
 
     const displayName =
-      channel?.name ||
-      channelCode;
+      channel?.name || channelCode;
 
-    console.log(
-      "주문수집 테스트:",
+    const salesChannelId =
+      await getSalesChannelIdByCode(
+        channelCode
+      );
+
+    const response = await fetch(
+      "/api/order-collection/collect",
       {
-        channelCode,
-        displayName,
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          salesChannelId,
+        }),
       }
     );
 
-    /*
-      현재 실제 판매채널 API 연동 전 단계입니다.
-      추후 실제 API 연결 시 이 위치에
-      fetch() 코드를 추가합니다.
-    */
+    const result =
+      await response.json();
 
-    await new Promise<void>(
-      (resolve) => {
-        setTimeout(
-          resolve,
-          300
-        );
-      }
-    );
+    if (!response.ok) {
+      throw new Error(
+        result.message ||
+          `${displayName} 주문수집에 실패했습니다.`
+      );
+    }
 
     setMessage(
-      `${displayName} 주문수집 테스트가 완료되었습니다.`
+      `${displayName} 주문수집 완료 · 수집 ${result.collected ?? 0}건 / 신규 ${result.inserted ?? 0}건 / 중복 ${result.skipped ?? 0}건 / 오류 ${result.failed ?? 0}건`
+    );
+
+    console.log(
+      `${displayName} 주문수집 결과:`,
+      result
     );
   } catch (error) {
     console.error(
@@ -1158,7 +1279,6 @@ async function collectOrders(
   }
 }
 
-
 /* =======================================================
    주문수집 - 전체
 ======================================================= */
@@ -1169,25 +1289,106 @@ async function collectAllOrders() {
   setCollectingCode("ALL");
 
   try {
-    console.log(
-      "전체 주문수집 테스트 시작"
-    );
+    let collected = 0;
+    let inserted = 0;
+    let skipped = 0;
+    let failed = 0;
+    let excluded = 0;
 
-    /*
-      현재 실제 판매채널 API 연동 전 단계입니다.
-    */
+    for (const channel of COLLECTION_CHANNELS) {
+      try {
+        let salesChannelId: string;
 
-    await new Promise<void>(
-      (resolve) => {
-        setTimeout(
-          resolve,
-          300
+        try {
+          salesChannelId =
+            await getSalesChannelIdByCode(
+              channel.code
+            );
+        } catch {
+          excluded += 1;
+          continue;
+        }
+
+        const { data: connection, error: connectionError } =
+          await supabase
+            .from("sales_channel_api_connections")
+            .select("id")
+            .eq(
+              "sales_channel_id",
+              salesChannelId
+            )
+            .eq("is_active", true)
+            .maybeSingle();
+
+        if (connectionError) {
+          console.error(
+            `${channel.name} API 연결정보 조회 오류:`,
+            connectionError
+          );
+
+          failed += 1;
+          continue;
+        }
+
+        if (!connection) {
+          excluded += 1;
+          continue;
+        }
+
+        const response = await fetch(
+          "/api/order-collection/collect",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              salesChannelId,
+            }),
+          }
         );
+
+        const result =
+          await response.json();
+
+        if (!response.ok) {
+          console.error(
+            `${channel.name} 수집 실패:`,
+            result
+          );
+
+          failed += 1;
+          continue;
+        }
+
+        collected += Number(
+          result.collected ?? 0
+        );
+
+        inserted += Number(
+          result.inserted ?? 0
+        );
+
+        skipped += Number(
+          result.skipped ?? 0
+        );
+
+        failed += Number(
+          result.failed ?? 0
+        );
+      } catch (error) {
+        console.error(
+          `${channel.name} 주문수집 오류:`,
+          error
+        );
+
+        failed += 1;
       }
-    );
+    }
 
     setMessage(
-      "전체 주문수집 테스트가 완료되었습니다."
+      `전체 주문수집 완료 · 수집 ${collected}건 / 신규 ${inserted}건 / 중복 ${skipped}건 / 오류 ${failed}건 · 미설정 채널 ${excluded}개 제외`
     );
   } catch (error) {
     console.error(
