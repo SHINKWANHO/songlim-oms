@@ -27,16 +27,21 @@ type Customer = {
 
 type Product = {
   id: string;
-  code: string | null;
+  product_code: string | null;
   name: string;
 };
 
 type OrderItem = {
   id: string;
   order_id: string;
-  product_id: string;
+  product_id: string | null;
+  customer_product_id: string | null;
+  customer_product_code: string | null;
+  product_name: string;
   quantity: number;
-  unit_price: number;
+  unit_price: number | null;
+  line_amount: number | null;
+  matching_status: string;
 };
 
 export default function OrderDetailPage() {
@@ -128,9 +133,7 @@ export default function OrderDetailPage() {
       const { data: productData } =
         await supabase
           .from("products")
-          .select(
-            "id, code, name"
-          )
+          .select("id, product_code, name")
           .in(
             "id",
             productIds
@@ -322,98 +325,7 @@ export default function OrderDetailPage() {
         display: "flex",
       }}
     >
-      {/* =====================================================
-          SIDEBAR
-      ===================================================== */}
 
-      <aside
-        style={{
-          width: "240px",
-          minHeight: "100vh",
-          background: "#111827",
-          color: "#ffffff",
-          padding: "28px 18px",
-          flexShrink: 0,
-        }}
-      >
-        <div
-          style={{
-            padding:
-              "0 12px 28px",
-            borderBottom:
-              "1px solid rgba(255,255,255,0.1)",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "13px",
-              color: "#94a3b8",
-              fontWeight: 700,
-              letterSpacing:
-                "1.5px",
-            }}
-          >
-            SONGLIM LOGISTICS
-          </div>
-
-          <div
-            style={{
-              marginTop: "8px",
-              fontSize: "23px",
-              fontWeight: 800,
-            }}
-          >
-            송림물류 OMS
-          </div>
-        </div>
-
-        <nav
-          style={{
-            marginTop: "24px",
-            display: "flex",
-            flexDirection:
-              "column",
-            gap: "6px",
-          }}
-        >
-          <Menu
-            href="/"
-            label="대시보드"
-            icon="▦"
-          />
-
-          <Menu
-            href="/customers"
-            label="거래처 관리"
-            icon="▣"
-          />
-
-          <Menu
-            href="/products"
-            label="상품 관리"
-            icon="□"
-          />
-
-          <Menu
-            href="/collection"
-            label="주문 수집"
-            icon="↓"
-          />
-
-          <Menu
-            href="/orders"
-            label="주문 관리"
-            icon="≡"
-            active
-          />
-
-          <Menu
-            href="/shipment-request"
-            label="출고 요청"
-            icon="→"
-          />
-        </nav>
-      </aside>
 
       {/* =====================================================
           MAIN
@@ -688,21 +600,24 @@ export default function OrderDetailPage() {
             />
 
             <ActionButton
-              label="주문 취소"
-              disabled={
-                saving ||
-                order.status ===
-                  "확정" ||
-                order.status ===
-                  "취소"
-              }
-              danger
-              onClick={() =>
-                updateStatus(
-                  "취소"
-                )
-              }
-            />
+  label="주문 취소"
+  disabled={
+    saving ||
+    order.status === "취소" ||
+    !!order.shipment_requested
+  }
+  danger
+  onClick={() => {
+    const confirmed =
+      window.confirm(
+        "이 주문을 취소하시겠습니까?"
+      );
+
+    if (!confirmed) return;
+
+    updateStatus("취소");
+  }}
+/>
           </div>
 
           <div
@@ -811,172 +726,138 @@ export default function OrderDetailPage() {
           </div>
 
           <table
-            style={{
-              width:
-                "100%",
-              borderCollapse:
-                "collapse",
-            }}
-          >
-            <thead>
-              <tr
+  style={{
+    width: "100%",
+    borderCollapse: "collapse",
+  }}
+>
+  <thead>
+    <tr style={{ background: "#f8fafc" }}>
+      <th style={thStyle}>상품코드</th>
+      <th style={thStyle}>상품명</th>
+
+      <th style={{ ...thStyle, textAlign: "center" }}>
+        매칭상태
+      </th>
+
+      <th style={{ ...thStyle, textAlign: "right" }}>
+        수량
+      </th>
+
+      <th style={{ ...thStyle, textAlign: "right" }}>
+        단가
+      </th>
+
+      <th style={{ ...thStyle, textAlign: "right" }}>
+        금액
+      </th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {items.length === 0 ? (
+      <tr>
+        <td
+          colSpan={6}
+          style={{
+            padding: "50px",
+            textAlign: "center",
+            color: "#94a3b8",
+          }}
+        >
+          주문상품이 없습니다.
+        </td>
+      </tr>
+    ) : (
+      items.map((item) => {
+        const amount =
+          Number(item.line_amount ?? 0) ||
+          Number(item.quantity) *
+            Number(item.unit_price ?? 0);
+
+        const matched =
+          item.matching_status === "매칭";
+
+        return (
+          <tr key={item.id}>
+            {/* 상품코드 */}
+            <td style={tdStyle}>
+              {item.customer_product_code ?? "-"}
+            </td>
+
+            {/* 상품명 */}
+            <td
+              style={{
+                ...tdStyle,
+                fontWeight: 700,
+              }}
+            >
+              {item.product_name}
+            </td>
+
+            {/* 매칭상태 */}
+            <td
+              style={{
+                ...tdStyle,
+                textAlign: "center",
+              }}
+            >
+              <span
                 style={{
-                  background:
-                    "#f8fafc",
+                  display: "inline-block",
+                  padding: "5px 12px",
+                  borderRadius: "999px",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  background: matched
+                    ? "#DCFCE7"
+                    : "#FEE2E2",
+                  color: matched
+                    ? "#15803D"
+                    : "#DC2626",
                 }}
               >
-                <th
-                  style={
-                    thStyle
-                  }
-                >
-                  상품코드
-                </th>
+                {matched ? "매칭완료" : "미매칭"}
+              </span>
+            </td>
 
-                <th
-                  style={
-                    thStyle
-                  }
-                >
-                  상품명
-                </th>
+            {/* 수량 */}
+            <td
+              style={{
+                ...tdStyle,
+                textAlign: "right",
+              }}
+            >
+              {Number(item.quantity).toLocaleString()} EA
+            </td>
 
-                <th
-                  style={{
-                    ...thStyle,
-                    textAlign:
-                      "right",
-                  }}
-                >
-                  수량
-                </th>
+            {/* 단가 */}
+            <td
+              style={{
+                ...tdStyle,
+                textAlign: "right",
+              }}
+            >
+              {Number(item.unit_price ?? 0).toLocaleString()}원
+            </td>
 
-                <th
-                  style={{
-                    ...thStyle,
-                    textAlign:
-                      "right",
-                  }}
-                >
-                  단가
-                </th>
-
-                <th
-                  style={{
-                    ...thStyle,
-                    textAlign:
-                      "right",
-                  }}
-                >
-                  금액
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {items.map(
-                (item) => {
-                  const product =
-                    productMap.get(
-                      item.product_id
-                    );
-
-                  const amount =
-                    Number(
-                      item.quantity
-                    ) *
-                    Number(
-                      item.unit_price
-                    );
-
-                  return (
-                    <tr
-                      key={
-                        item.id
-                      }
-                    >
-                      <td
-                        style={
-                          tdStyle
-                        }
-                      >
-                        {product?.code ||
-                          "-"}
-                      </td>
-
-                      <td
-                        style={{
-                          ...tdStyle,
-                          fontWeight:
-                            700,
-                        }}
-                      >
-                        {product?.name ||
-                          "-"}
-                      </td>
-
-                      <td
-                        style={{
-                          ...tdStyle,
-                          textAlign:
-                            "right",
-                        }}
-                      >
-                        {Number(
-                          item.quantity
-                        ).toLocaleString()}
-                      </td>
-
-                      <td
-                        style={{
-                          ...tdStyle,
-                          textAlign:
-                            "right",
-                        }}
-                      >
-                        {Number(
-                          item.unit_price
-                        ).toLocaleString()}
-                        원
-                      </td>
-
-                      <td
-                        style={{
-                          ...tdStyle,
-                          textAlign:
-                            "right",
-                            fontWeight:
-                              700,
-                        }}
-                      >
-                        {amount.toLocaleString()}
-                        원
-                      </td>
-                    </tr>
-                  );
-                }
-              )}
-
-              {items.length ===
-                0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    style={{
-                      padding:
-                        "50px",
-                      textAlign:
-                        "center",
-                      color:
-                        "#94a3b8",
-                    }}
-                  >
-                    주문상품이 없습니다.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+            {/* 금액 */}
+            <td
+              style={{
+                ...tdStyle,
+                textAlign: "right",
+                fontWeight: 700,
+                color: "#1E40AF",
+              }}
+            >
+              {amount.toLocaleString()}원
+            </td>
+          </tr>
+        );
+      })
+    )}
+  </tbody>
+</table>
         </section>
 
         {/* =====================================================
