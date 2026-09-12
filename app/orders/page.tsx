@@ -1,13 +1,13 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
-import Sidebar from "@/app/components/Sidebar";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { createClient } from "@/lib/supabase/client";
-import OrderList from "./OrderList";
-
-const supabase = createClient();
 
 /* =========================================================
    TYPE
@@ -55,733 +55,142 @@ type OrderItem = {
   quantity: number | null;
 };
 
-type OrderCheck = {
-  id: string;
-  status: string | null;
-  confirmed_at: string | null;
-  shipment_requested: boolean | null;
-  shipment_requested_at: string | null;
-};
-
 /* =========================================================
    STATUS
 ========================================================= */
 
 const STATUS = [
   "전체",
+  "수집완료",
   "접수",
   "확인",
   "확정",
   "취소",
-];
+] as const;
 
 /* =========================================================
    PAGE
 ========================================================= */
 
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [items, setItems] = useState<OrderItem[]>([]);
+  const supabase = useMemo(
+    () => createClient(),
+    []
+  );
 
-  const [status, setStatus] = useState("전체");
-  const [search, setSearch] = useState("");
+  const [orders, setOrders] =
+    useState<Order[]>([]);
 
-  const [loading, setLoading] = useState(true);
+  const [customers, setCustomers] =
+    useState<Customer[]>([]);
 
-  const [processingId, setProcessingId] =
-    useState<string | null>(null);
+  const [items, setItems] =
+    useState<OrderItem[]>([]);
+
+  const [status, setStatus] =
+    useState("전체");
+
+  const [channelFilter, setChannelFilter] =
+    useState("전체");
+
+  const [search, setSearch] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [selectedIds, setSelectedIds] =
+    useState<string[]>([]);
+
+  const [bulkProcessing, setBulkProcessing] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
 
   /* =======================================================
-     일괄처리 선택
+     데이터 조회
   ======================================================= */
 
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [bulkProcessing, setBulkProcessing] = useState(false);
+  const loadData = useCallback(
+    async () => {
+      setLoading(true);
+      setError("");
 
-  const [error, setError] = useState("");
+      try {
+        const [
+          ordersResult,
+          customersResult,
+          itemsResult,
+        ] = await Promise.all([
+          supabase
+            .from("orders")
+            .select("*")
+            .order("created_at", {
+              ascending: false,
+            }),
 
-  /* =======================================================
-     최초 조회
-  ======================================================= */
+          supabase
+            .from("customers")
+            .select("id, code, name")
+            .order("name"),
+
+          supabase
+            .from("order_items")
+            .select(
+              "order_id, quantity"
+            ),
+        ]);
+
+        if (ordersResult.error) {
+          throw ordersResult.error;
+        }
+
+        if (customersResult.error) {
+          throw customersResult.error;
+        }
+
+        if (itemsResult.error) {
+          throw itemsResult.error;
+        }
+
+        setOrders(
+          (ordersResult.data || []) as Order[]
+        );
+
+        setCustomers(
+          (customersResult.data ||
+            []) as Customer[]
+        );
+
+        setItems(
+          (itemsResult.data ||
+            []) as OrderItem[]
+        );
+      } catch (err) {
+        console.error(
+          "주문관리 데이터 조회 오류:",
+          err
+        );
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : "주문 데이터를 불러오는 중 오류가 발생했습니다."
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [supabase]
+  );
 
   useEffect(() => {
-    loadData();
-  }, []);
+    void loadData();
+  }, [loadData]);
 
   /* =======================================================
-     전체 데이터 조회
-  ======================================================= */
-
-  async function loadData() {
-    setLoading(true);
-    setError("");
-
-    try {
-      const [
-        ordersResult,
-        customersResult,
-        itemsResult,
-      ] = await Promise.all([
-        supabase
-          .from("orders")
-          .select("*")
-          .order("created_at", {
-            ascending: false,
-          }),
-
-        supabase
-          .from("customers")
-          .select("id, code, name")
-          .order("name"),
-
-        supabase
-          .from("order_items")
-          .select("order_id, quantity"),
-      ]);
-
-      console.log(
-        "주문관리 DB 조회 결과:",
-        ordersResult.data
-      );
-
-      console.log(
-        "주문관리 DB 조회 오류:",
-        ordersResult.error
-      );
-
-      if (ordersResult.error) {
-        setError(
-          `주문 조회 실패: ${ordersResult.error.message}`
-        );
-      }
-
-      if (customersResult.error) {
-        setError(
-          `거래처 조회 실패: ${customersResult.error.message}`
-        );
-      }
-
-      if (itemsResult.error) {
-        setError(
-          `상품 조회 실패: ${itemsResult.error.message}`
-        );
-      }
-
-      setOrders(
-        (ordersResult.data || []) as Order[]
-      );
-
-      setCustomers(
-        (customersResult.data || []) as Customer[]
-      );
-
-      setItems(
-        (itemsResult.data || []) as OrderItem[]
-      );
-    } catch (err) {
-      console.error(
-        "주문관리 데이터 조회 오류:",
-        err
-      );
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "주문 데이터를 불러오는 중 오류가 발생했습니다."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  /* =======================================================
-     주문 상태 변경
-
-     접수 → 확인
-     확인 → 확정
-
-     ※ 출고요청은 status를 변경하지 않음
-  ======================================================= */
-
-  async function updateOrderStatus(
-    order: Order,
-    nextStatus: string
-  ) {
-    if (processingId || bulkProcessing) return;
-
-    console.log("상태변경 시작:", {
-      orderId: order.id,
-      currentStatus: order.status,
-      nextStatus,
-    });
-
-    setProcessingId(order.id);
-    setError("");
-
-    try {
-      const now = new Date().toISOString();
-
-      const updateData: Record<
-        string,
-        unknown
-      > = {
-        status: nextStatus,
-      };
-
-      /*
-       * 확정일 기록
-       */
-      if (nextStatus === "확정") {
-        updateData.confirmed_at = now;
-      }
-
-      /* ===================================================
-         1. DB UPDATE
-      =================================================== */
-
-      const {
-        error: updateError,
-      } = await supabase
-        .from("orders")
-        .update(updateData)
-        .eq("id", order.id)
-        .eq("status", order.status);
-
-      console.log(
-        "상태변경 UPDATE 결과:",
-        updateError
-      );
-
-      if (updateError) {
-        setError(
-          `주문 상태 변경 실패: ${updateError.message}`
-        );
-
-        return;
-      }
-
-      /* ===================================================
-         2. 실제 DB 다시 조회
-      =================================================== */
-
-      const {
-        data: checkData,
-        error: checkError,
-      } = await supabase
-        .from("orders")
-        .select(
-          "id, status, confirmed_at, shipment_requested, shipment_requested_at"
-        )
-        .eq("id", order.id);
-
-      console.log(
-        "상태변경 후 DB 재조회:",
-        checkData,
-        checkError
-      );
-
-      if (checkError) {
-        setError(
-          `상태는 변경되었지만 DB 확인에 실패했습니다: ${checkError.message}`
-        );
-
-        return;
-      }
-
-      const updatedOrder =
-        checkData?.[0] as OrderCheck | undefined;
-
-      if (!updatedOrder) {
-        setError(
-          "상태 변경 후 주문 정보를 확인할 수 없습니다."
-        );
-
-        return;
-      }
-
-      /* ===================================================
-         3. 실제 DB 값으로 화면 갱신
-      =================================================== */
-
-      setOrders((prev) =>
-        prev.map((item) =>
-          item.id === order.id
-            ? {
-                ...item,
-
-                status:
-                  updatedOrder.status,
-
-                confirmed_at:
-                  updatedOrder.confirmed_at,
-
-                shipment_requested:
-                  updatedOrder.shipment_requested,
-
-                shipment_requested_at:
-                  updatedOrder.shipment_requested_at,
-              }
-            : item
-        )
-      );
-
-      console.log(
-        "상태변경 완료:",
-        updatedOrder
-      );
-    } catch (err) {
-      console.error(
-        "상태 변경 처리 오류:",
-        err
-      );
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "주문 상태 변경 중 오류가 발생했습니다."
-      );
-    } finally {
-      setProcessingId(null);
-    }
-  }
-
-  /* =======================================================
-     출고 요청
-
-     확정
-       ↓
-     shipment_requested = true
-
-     status는 "확정" 그대로 유지
-  ======================================================= */
-
-  async function requestShipment(
-    order: Order
-  ) {
-    if (processingId || bulkProcessing) return;
-
-    if (order.status !== "확정") {
-      alert(
-        "확정된 주문만 출고 요청할 수 있습니다."
-      );
-
-      return;
-    }
-
-    if (
-      order.shipment_requested === true
-    ) {
-      return;
-    }
-
-    console.log(
-      "출고요청 시작:",
-      order.id
-    );
-
-    setProcessingId(order.id);
-    setError("");
-
-    try {
-      const now =
-        new Date().toISOString();
-
-      /* =================================================
-         1. DB UPDATE
-      ================================================= */
-
-      const {
-        error: updateError,
-      } = await supabase
-        .from("orders")
-        .update({
-          shipment_requested: true,
-          shipment_requested_at: now,
-        })
-        .eq("id", order.id)
-        .eq("status", "확정");
-
-      console.log(
-        "출고요청 UPDATE 결과:",
-        updateError
-      );
-
-      if (updateError) {
-        setError(
-          `출고 요청 실패: ${updateError.message}`
-        );
-
-        return;
-      }
-
-      /* =================================================
-         2. DB 재조회
-      ================================================= */
-
-      const {
-        data: checkData,
-        error: checkError,
-      } = await supabase
-        .from("orders")
-        .select(
-          "id, status, confirmed_at, shipment_requested, shipment_requested_at"
-        )
-        .eq("id", order.id);
-
-      console.log(
-        "출고요청 DB 재조회:",
-        checkData,
-        checkError
-      );
-
-      if (checkError) {
-        setError(
-          `출고 요청 후 DB 확인 실패: ${checkError.message}`
-        );
-
-        return;
-      }
-
-      const updatedOrder =
-        checkData?.[0] as OrderCheck | undefined;
-
-      if (!updatedOrder) {
-        setError(
-          "출고 요청 후 주문 정보를 찾을 수 없습니다."
-        );
-
-        return;
-      }
-
-      /* =================================================
-         3. 실제 DB 값 검증
-      ================================================= */
-
-      if (
-        updatedOrder.shipment_requested !==
-        true
-      ) {
-        setError(
-          "출고요청 UPDATE는 성공했지만 DB 값이 true로 저장되지 않았습니다."
-        );
-
-        return;
-      }
-
-      /* =================================================
-         4. 화면에 DB 값 반영
-      ================================================= */
-
-      setOrders((prev) =>
-        prev.map((item) =>
-          item.id === order.id
-            ? {
-                ...item,
-
-                status:
-                  updatedOrder.status,
-
-                confirmed_at:
-                  updatedOrder.confirmed_at,
-
-                shipment_requested:
-                  updatedOrder.shipment_requested,
-
-                shipment_requested_at:
-                  updatedOrder.shipment_requested_at,
-              }
-            : item
-        )
-      );
-
-      console.log(
-        "출고요청 완료:",
-        updatedOrder
-      );
-    } catch (err) {
-      console.error(
-        "출고요청 처리 오류:",
-        err
-      );
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "출고 요청 중 오류가 발생했습니다."
-      );
-    } finally {
-      setProcessingId(null);
-    }
-  }
-
-  /* =======================================================
-     일괄처리 가능한 주문인지 확인
-  ======================================================= */
-
-  function isBulkProcessable(
-    order: Order
-  ) {
-    if (order.status === "접수") {
-      return true;
-    }
-
-    if (order.status === "확인") {
-      return true;
-    }
-
-    if (
-      order.status === "확정" &&
-      order.shipment_requested !== true
-    ) {
-      return true;
-    }
-
-    return false;
-  }
-
-  /* =======================================================
-     일괄처리
-     
-     접수 → 확인
-     확인 → 확정
-     확정 → 출고요청
-
-     한 번 클릭하면 각 주문은 현재 상태에서
-     딱 한 단계만 진행
-  ======================================================= */
-
-  async function handleBulkProcess() {
-    if (bulkProcessing) return;
-
-    if (selectedIds.length === 0) {
-      alert(
-        "일괄처리할 주문을 선택하세요."
-      );
-
-      return;
-    }
-
-    const selectedOrders =
-      orders.filter((order) =>
-        selectedIds.includes(order.id)
-      );
-
-    const processableOrders =
-      selectedOrders.filter(
-        isBulkProcessable
-      );
-
-    if (
-      processableOrders.length === 0
-    ) {
-      alert(
-        "일괄처리할 수 있는 주문이 없습니다."
-      );
-
-      return;
-    }
-
-    const skippedCount =
-      selectedOrders.length -
-      processableOrders.length;
-
-    let confirmMessage =
-      `선택한 ${selectedOrders.length.toLocaleString()}건을 일괄처리하시겠습니까?\n\n`;
-
-    confirmMessage +=
-      `처리 대상: ${processableOrders.length.toLocaleString()}건`;
-
-    if (skippedCount > 0) {
-      confirmMessage +=
-        `\n처리 제외: ${skippedCount.toLocaleString()}건`;
-    }
-
-    confirmMessage +=
-      "\n\n※ 각 주문은 현재 상태에서 다음 단계로만 진행됩니다.";
-
-    const confirmed =
-      window.confirm(
-        confirmMessage
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setBulkProcessing(true);
-    setError("");
-
-    let successCount = 0;
-    let failCount = 0;
-
-    try {
-      /*
-       * 선택된 주문을 하나씩 처리합니다.
-       * 동시에 여러 UPDATE를 보내지 않아
-       * 상태 충돌 가능성을 줄입니다.
-       */
-
-      for (
-        const order of processableOrders
-      ) {
-        try {
-          const currentStatus =
-            order.status;
-
-          const now =
-            new Date().toISOString();
-
-          /* =============================================
-             접수 → 확인
-          ============================================= */
-
-          if (
-            currentStatus === "접수"
-          ) {
-            const {
-              error: updateError,
-            } = await supabase
-              .from("orders")
-              .update({
-                status: "확인",
-              })
-              .eq("id", order.id)
-              .eq("status", "접수");
-
-            if (updateError) {
-              console.error(
-                "일괄 확인 처리 실패:",
-                order.id,
-                updateError
-              );
-
-              failCount++;
-              continue;
-            }
-
-            successCount++;
-            continue;
-          }
-
-          /* =============================================
-             확인 → 확정
-          ============================================= */
-
-          if (
-            currentStatus === "확인"
-          ) {
-            const {
-              error: updateError,
-            } = await supabase
-              .from("orders")
-              .update({
-                status: "확정",
-                confirmed_at: now,
-              })
-              .eq("id", order.id)
-              .eq("status", "확인");
-
-            if (updateError) {
-              console.error(
-                "일괄 확정 처리 실패:",
-                order.id,
-                updateError
-              );
-
-              failCount++;
-              continue;
-            }
-
-            successCount++;
-            continue;
-          }
-
-          /* =============================================
-             확정 → 출고 요청
-          ============================================= */
-
-          if (
-            currentStatus === "확정" &&
-            order.shipment_requested !== true
-          ) {
-            const {
-              error: updateError,
-            } = await supabase
-              .from("orders")
-              .update({
-                shipment_requested: true,
-                shipment_requested_at: now,
-              })
-              .eq("id", order.id)
-              .eq("status", "확정")
-              .eq(
-                "shipment_requested",
-                false
-              );
-
-            if (updateError) {
-              console.error(
-                "일괄 출고요청 실패:",
-                order.id,
-                updateError
-              );
-
-              failCount++;
-              continue;
-            }
-
-            successCount++;
-          }
-        } catch (orderError) {
-          console.error(
-            "개별 일괄처리 오류:",
-            order.id,
-            orderError
-          );
-
-          failCount++;
-        }
-      }
-
-      /* =================================================
-         전체 처리 후 DB에서 다시 조회
-
-         화면을 DB 실제값으로 맞춤
-      ================================================= */
-
-      await loadData();
-
-      setSelectedIds([]);
-
-      if (failCount === 0) {
-        alert(
-          `${successCount.toLocaleString()}건의 주문이 일괄처리되었습니다.`
-        );
-      } else {
-        alert(
-          `일괄처리가 완료되었습니다.\n\n성공: ${successCount.toLocaleString()}건\n실패: ${failCount.toLocaleString()}건`
-        );
-      }
-    } catch (err) {
-      console.error(
-        "일괄처리 전체 오류:",
-        err
-      );
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "주문 일괄처리 중 오류가 발생했습니다."
-      );
-    } finally {
-      setBulkProcessing(false);
-    }
-  }
-
-  /* =======================================================
-     거래처 Map
+     거래처 MAP
   ======================================================= */
 
   const customerMap = useMemo(() => {
@@ -794,7 +203,7 @@ export default function OrdersPage() {
   }, [customers]);
 
   /* =======================================================
-     상품 Map
+     상품 집계 MAP
   ======================================================= */
 
   const itemMap = useMemo(() => {
@@ -814,14 +223,10 @@ export default function OrdersPage() {
         };
 
       map.set(item.order_id, {
-        count:
-          current.count + 1,
-
+        count: current.count + 1,
         quantity:
           current.quantity +
-          Number(
-            item.quantity || 0
-          ),
+          Number(item.quantity || 0),
       });
     });
 
@@ -829,12 +234,17 @@ export default function OrdersPage() {
   }, [items]);
 
   /* =======================================================
-     상태별 주문 수
+     상태별 건수
   ======================================================= */
 
   const statusCounts = useMemo(() => {
     return {
       전체: orders.length,
+
+      수집완료: orders.filter(
+        (order) =>
+          order.status === "수집완료"
+      ).length,
 
       접수: orders.filter(
         (order) =>
@@ -856,6 +266,28 @@ export default function OrdersPage() {
           order.status === "취소"
       ).length,
     };
+  }, [orders]);
+
+  /* =======================================================
+     판매채널 목록
+  ======================================================= */
+
+  const channelOptions = useMemo(() => {
+    const values = orders
+      .map((order) =>
+        order.channel?.trim()
+      )
+      .filter(
+        (value): value is string =>
+          !!value
+      );
+
+    return [
+      "전체",
+      ...Array.from(
+        new Set(values)
+      ).sort(),
+    ];
   }, [orders]);
 
   /* =======================================================
@@ -882,44 +314,80 @@ export default function OrdersPage() {
         return false;
       }
 
+      const matchesChannel =
+        channelFilter === "전체" ||
+        order.channel ===
+          channelFilter;
+
+      if (!matchesChannel) {
+        return false;
+      }
+
       if (!keyword) {
         return true;
       }
 
-      const orderNo =
-        order.order_no ||
-        order.order_number ||
-        order.source_order_number ||
-        "";
+      const values = [
+        order.order_number,
+        order.order_no,
+        order.source_order_number,
+        customer?.name,
+        customer?.code,
+        order.channel,
+      ];
 
-      const matchesSearch =
-        orderNo
-          .toLowerCase()
-          .includes(keyword) ||
-
-        customer?.name
+      return values.some((value) =>
+        value
           ?.toLowerCase()
-          .includes(keyword) ||
-
-        customer?.code
-          ?.toLowerCase()
-          .includes(keyword) ||
-
-        order.channel
-          ?.toLowerCase()
-          .includes(keyword);
-
-      return !!matchesSearch;
+          .includes(keyword)
+      );
     });
   }, [
     orders,
     customerMap,
     search,
     status,
+    channelFilter,
   ]);
 
   /* =======================================================
-     전체 선택
+     일괄처리 가능 여부
+
+     수집완료 → 접수
+     접수 → 확인
+     확인 → 확정
+     확정 → 출고요청
+  ======================================================= */
+
+  function isBulkProcessable(
+    order: Order
+  ) {
+    if (
+      order.status === "수집완료"
+    ) {
+      return true;
+    }
+
+    if (order.status === "접수") {
+      return true;
+    }
+
+    if (order.status === "확인") {
+      return true;
+    }
+
+    if (
+      order.status === "확정" &&
+      order.shipment_requested !== true
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /* =======================================================
+     선택 가능한 주문
   ======================================================= */
 
   const filteredSelectableIds =
@@ -948,31 +416,246 @@ export default function OrdersPage() {
     }
   }
 
-  /* =======================================================
-     개별 선택
-  ======================================================= */
-
   function handleSelectOrder(
     id: string,
     checked: boolean
   ) {
     if (checked) {
-      setSelectedIds((prev) => {
-        if (prev.includes(id)) {
-          return prev;
-        }
-
-        return [
-          ...prev,
-          id,
-        ];
-      });
+      setSelectedIds((prev) =>
+        prev.includes(id)
+          ? prev
+          : [...prev, id]
+      );
     } else {
       setSelectedIds((prev) =>
         prev.filter(
           (item) => item !== id
         )
       );
+    }
+  }
+
+  /* =======================================================
+     일괄처리
+  ======================================================= */
+
+  async function handleBulkProcess() {
+    if (bulkProcessing) {
+      return;
+    }
+
+    if (selectedIds.length === 0) {
+      alert(
+        "일괄처리할 주문을 선택하세요."
+      );
+      return;
+    }
+
+    const selectedOrders =
+      orders.filter((order) =>
+        selectedIds.includes(order.id)
+      );
+
+    const processableOrders =
+      selectedOrders.filter(
+        isBulkProcessable
+      );
+
+    if (
+      processableOrders.length === 0
+    ) {
+      alert(
+        "일괄처리할 수 있는 주문이 없습니다."
+      );
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `선택한 ${processableOrders.length.toLocaleString()}건의 주문을 다음 단계로 처리하시겠습니까?`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBulkProcessing(true);
+    setError("");
+
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      for (
+        const order of processableOrders
+      ) {
+        try {
+          const currentStatus =
+            order.status;
+
+          const now =
+            new Date().toISOString();
+
+          /* 수집완료 → 접수 */
+
+          if (
+            currentStatus ===
+            "수집완료"
+          ) {
+            const { error } =
+              await supabase
+                .from("orders")
+                .update({
+                  status: "접수",
+                })
+                .eq("id", order.id)
+                .eq(
+                  "status",
+                  "수집완료"
+                );
+
+            if (error) {
+              failCount++;
+              console.error(
+                "접수 처리 실패:",
+                order.id,
+                error
+              );
+            } else {
+              successCount++;
+            }
+
+            continue;
+          }
+
+          /* 접수 → 확인 */
+
+          if (
+            currentStatus === "접수"
+          ) {
+            const { error } =
+              await supabase
+                .from("orders")
+                .update({
+                  status: "확인",
+                })
+                .eq("id", order.id)
+                .eq(
+                  "status",
+                  "접수"
+                );
+
+            if (error) {
+              failCount++;
+              console.error(
+                "확인 처리 실패:",
+                order.id,
+                error
+              );
+            } else {
+              successCount++;
+            }
+
+            continue;
+          }
+
+          /* 확인 → 확정 */
+
+          if (
+            currentStatus === "확인"
+          ) {
+            const { error } =
+              await supabase
+                .from("orders")
+                .update({
+                  status: "확정",
+                  confirmed_at:
+                    now,
+                })
+                .eq("id", order.id)
+                .eq(
+                  "status",
+                  "확인"
+                );
+
+            if (error) {
+              failCount++;
+              console.error(
+                "확정 처리 실패:",
+                order.id,
+                error
+              );
+            } else {
+              successCount++;
+            }
+
+            continue;
+          }
+
+          /* 확정 → 출고요청 */
+
+          if (
+            currentStatus === "확정" &&
+            order.shipment_requested !==
+              true
+          ) {
+            const { error } =
+              await supabase
+                .from("orders")
+                .update({
+                  shipment_requested:
+                    true,
+                  shipment_requested_at:
+                    now,
+                })
+                .eq("id", order.id)
+                .eq(
+                  "status",
+                  "확정"
+                );
+
+            if (error) {
+              failCount++;
+              console.error(
+                "출고요청 처리 실패:",
+                order.id,
+                error
+              );
+            } else {
+              successCount++;
+            }
+          }
+        } catch (orderError) {
+          console.error(
+            "개별 주문 처리 오류:",
+            order.id,
+            orderError
+          );
+
+          failCount++;
+        }
+      }
+
+      await loadData();
+
+      setSelectedIds([]);
+
+      alert(
+        `일괄처리가 완료되었습니다.\n\n성공: ${successCount.toLocaleString()}건\n실패: ${failCount.toLocaleString()}건`
+      );
+    } catch (err) {
+      console.error(
+        "일괄처리 오류:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "주문 일괄처리 중 오류가 발생했습니다."
+      );
+    } finally {
+      setBulkProcessing(false);
     }
   }
 
@@ -988,28 +671,14 @@ export default function OrdersPage() {
         color: "#111827",
         fontFamily:
           '"Malgun Gothic", "Noto Sans KR", Arial, sans-serif',
-        display: "flex",
       }}
     >
-      {/* ===================================================
-          SIDEBAR
-      =================================================== */}
-<Sidebar />
-
-      {/* ===================================================
-          MAIN
-      =================================================== */}
-
       <section
         style={{
-          flex: 1,
-          minWidth: 0,
           padding: "34px 42px",
         }}
       >
-        {/* =================================================
-            HEADER
-        ================================================= */}
+        {/* HEADER */}
 
         <header
           style={{
@@ -1017,8 +686,7 @@ export default function OrdersPage() {
             justifyContent:
               "space-between",
             alignItems: "center",
-            marginBottom:
-              "28px",
+            marginBottom: "28px",
           }}
         >
           <div>
@@ -1034,8 +702,7 @@ export default function OrdersPage() {
 
             <h1
               style={{
-                margin:
-                  "6px 0 0",
+                margin: "6px 0 0",
                 fontSize: "32px",
                 fontWeight: 800,
               }}
@@ -1045,8 +712,7 @@ export default function OrdersPage() {
 
             <p
               style={{
-                margin:
-                  "8px 0 0",
+                margin: "8px 0 0",
                 color: "#64748b",
                 fontSize: "15px",
               }}
@@ -1056,10 +722,9 @@ export default function OrdersPage() {
           </div>
 
           <Link
-            href="/orders/new"
+            href="/orders/register"
             style={{
-              background:
-                "#2563eb",
+              background: "#2563eb",
               color: "#ffffff",
               textDecoration:
                 "none",
@@ -1074,24 +739,18 @@ export default function OrdersPage() {
           </Link>
         </header>
 
-        {/* =================================================
-            ERROR
-        ================================================= */}
+        {/* ERROR */}
 
         {error && (
           <div
             style={{
-              marginBottom:
-                "20px",
-              padding:
-                "16px 20px",
-              background:
-                "#fee2e2",
+              marginBottom: "20px",
+              padding: "16px 20px",
+              background: "#fee2e2",
               border:
                 "1px solid #fecaca",
               color: "#b91c1c",
-              borderRadius:
-                "10px",
+              borderRadius: "10px",
             }}
           >
             <strong>
@@ -1100,10 +759,8 @@ export default function OrdersPage() {
 
             <div
               style={{
-                marginTop:
-                  "5px",
-                fontSize:
-                  "13px",
+                marginTop: "5px",
+                fontSize: "13px",
               }}
             >
               {error}
@@ -1111,119 +768,124 @@ export default function OrdersPage() {
           </div>
         )}
 
-        {/* =================================================
-            STATUS SUMMARY
-        ================================================= */}
+        {/* STATUS SUMMARY */}
 
         <section
           style={{
             display: "grid",
             gridTemplateColumns:
-              "repeat(5, minmax(0, 1fr))",
+              "repeat(6, minmax(0, 1fr))",
             gap: "12px",
-            marginBottom:
-              "18px",
+            marginBottom: "18px",
           }}
         >
-          {STATUS.map(
-            (item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() =>
-                  setStatus(
-                    item
-                  )
-                }
+          {STATUS.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => {
+                setStatus(item);
+                setSelectedIds([]);
+              }}
+              style={{
+                textAlign: "left",
+                border:
+                  status === item
+                    ? "2px solid #2563eb"
+                    : "1px solid #e5e7eb",
+                background: "#ffffff",
+                borderRadius: "12px",
+                padding: "16px",
+                cursor: "pointer",
+              }}
+            >
+              <div
                 style={{
-                  textAlign:
-                    "left",
-                  border:
-                    status ===
-                    item
-                      ? "2px solid #2563eb"
-                      : "1px solid #e5e7eb",
-                  background:
-                    "#ffffff",
-                  borderRadius:
-                    "12px",
-                  padding:
-                    "16px",
-                  cursor:
-                    "pointer",
+                  fontSize: "13px",
+                  color: "#64748b",
+                  fontWeight: 700,
                 }}
               >
-                <div
-                  style={{
-                    fontSize:
-                      "13px",
-                    color:
-                      "#64748b",
-                    fontWeight:
-                      700,
-                  }}
-                >
-                  {item}
-                </div>
+                {item}
+              </div>
 
-                <div
-                  style={{
-                    marginTop:
-                      "8px",
-                    fontSize:
-                      "25px",
-                    fontWeight:
-                      800,
-                    color:
-                      status ===
-                      item
-                        ? "#2563eb"
-                        : "#111827",
-                  }}
-                >
-                  {
-                    statusCounts[
-                      item as keyof typeof statusCounts
-                    ]
-                  .toLocaleString()}
-                </div>
+              <div
+                style={{
+                  marginTop: "8px",
+                  fontSize: "25px",
+                  fontWeight: 800,
+                  color:
+                    status === item
+                      ? "#2563eb"
+                      : "#111827",
+                }}
+              >
+                {statusCounts[
+                  item
+                ].toLocaleString()}
+              </div>
 
-                <div
-                  style={{
-                    marginTop:
-                      "4px",
-                    fontSize:
-                      "12px",
-                    color:
-                      "#94a3b8",
-                  }}
-                >
-                  주문
-                </div>
-              </button>
-            )
-          )}
+              <div
+                style={{
+                  marginTop: "4px",
+                  fontSize: "12px",
+                  color: "#94a3b8",
+                }}
+              >
+                주문
+              </div>
+            </button>
+          ))}
         </section>
 
-        {/* =================================================
-            SEARCH
-        ================================================= */}
+        {/* SEARCH */}
 
         <section
           style={{
-            background:
-              "#ffffff",
+            background: "#ffffff",
             border:
               "1px solid #e5e7eb",
-            borderRadius:
-              "14px",
+            borderRadius: "14px",
             padding: "18px",
-            marginBottom:
-              "18px",
+            marginBottom: "18px",
             display: "flex",
             gap: "10px",
           }}
         >
+          <select
+            value={channelFilter}
+            onChange={(e) => {
+              setChannelFilter(
+                e.target.value
+              );
+              setSelectedIds([]);
+            }}
+            style={{
+              width: "180px",
+              height: "44px",
+              border:
+                "1px solid #d1d5db",
+              borderRadius: "8px",
+              padding: "0 12px",
+              fontSize: "14px",
+              background: "#ffffff",
+              outline: "none",
+            }}
+          >
+            {channelOptions.map(
+              (channel) => (
+                <option
+                  key={channel}
+                  value={channel}
+                >
+                  {channel === "전체"
+                    ? "전체 판매채널"
+                    : channel}
+                </option>
+              )
+            )}
+          </select>
+
           <input
             value={search}
             onChange={(e) =>
@@ -1231,20 +893,16 @@ export default function OrdersPage() {
                 e.target.value
               )
             }
-            placeholder="주문번호, 거래처명, 거래처코드, 채널 검색"
+            placeholder="주문번호, 원주문번호, 화주사, 판매채널 검색"
             style={{
               flex: 1,
               height: "44px",
               border:
                 "1px solid #d1d5db",
-              borderRadius:
-                "8px",
-              padding:
-                "0 14px",
-              fontSize:
-                "14px",
-              outline:
-                "none",
+              borderRadius: "8px",
+              padding: "0 14px",
+              fontSize: "14px",
+              outline: "none",
             }}
           />
 
@@ -1253,63 +911,51 @@ export default function OrdersPage() {
             onClick={() => {
               setSearch("");
               setStatus("전체");
+              setChannelFilter(
+                "전체"
+              );
               setSelectedIds([]);
             }}
             style={{
-              padding:
-                "0 20px",
+              padding: "0 20px",
               border:
                 "1px solid #d1d5db",
-              background:
-                "#ffffff",
-              borderRadius:
-                "8px",
-              cursor:
-                "pointer",
-              fontWeight:
-                700,
+              background: "#ffffff",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontWeight: 700,
             }}
           >
             초기화
           </button>
         </section>
 
-        {/* =================================================
-            ORDER TABLE
-        ================================================= */}
+        {/* ORDER TABLE */}
 
         <section
           style={{
-            background:
-              "#ffffff",
+            background: "#ffffff",
             border:
               "1px solid #e5e7eb",
-            borderRadius:
-              "14px",
-            overflow:
-              "hidden",
+            borderRadius: "14px",
+            overflow: "hidden",
           }}
         >
-          {/* TABLE HEADER */}
-
           <div
             style={{
-              padding:
-                "20px 24px",
+              padding: "20px 24px",
               borderBottom:
                 "1px solid #e5e7eb",
               display: "flex",
               justifyContent:
                 "space-between",
-              alignItems:
-                "center",
+              alignItems: "center",
             }}
           >
             <div>
               <strong
                 style={{
-                  fontSize:
-                    "18px",
+                  fontSize: "18px",
                 }}
               >
                 주문 목록
@@ -1317,33 +963,23 @@ export default function OrdersPage() {
 
               <span
                 style={{
-                  marginLeft:
-                    "10px",
-                  color:
-                    "#64748b",
-                  fontSize:
-                    "13px",
+                  marginLeft: "10px",
+                  color: "#64748b",
+                  fontSize: "13px",
                 }}
               >
                 총{" "}
-                {
-                  filteredOrders.length
-                }
+                {filteredOrders.length.toLocaleString()}
                 건
               </span>
 
-              {selectedIds.length >
-                0 && (
+              {selectedIds.length > 0 && (
                 <span
                   style={{
-                    marginLeft:
-                      "10px",
-                    color:
-                      "#2563eb",
-                    fontSize:
-                      "13px",
-                    fontWeight:
-                      700,
+                    marginLeft: "10px",
+                    color: "#2563eb",
+                    fontSize: "13px",
+                    fontWeight: 700,
                   }}
                 >
                   {selectedIds.length.toLocaleString()}
@@ -1358,8 +994,6 @@ export default function OrdersPage() {
                 gap: "8px",
               }}
             >
-              {/* 일괄처리 버튼 */}
-
               <button
                 type="button"
                 onClick={
@@ -1367,34 +1001,27 @@ export default function OrdersPage() {
                 }
                 disabled={
                   bulkProcessing ||
-                  selectedIds.length ===
-                    0
+                  selectedIds.length === 0
                 }
                 style={{
-                  border:
-                    "none",
+                  border: "none",
                   background:
                     selectedIds.length >
                       0 &&
                     !bulkProcessing
                       ? "#2563eb"
                       : "#cbd5e1",
-                  color:
-                    "#ffffff",
-                  borderRadius:
-                    "8px",
-                  padding:
-                    "9px 15px",
+                  color: "#ffffff",
+                  borderRadius: "8px",
+                  padding: "9px 15px",
                   cursor:
                     selectedIds.length >
                       0 &&
                     !bulkProcessing
                       ? "pointer"
                       : "default",
-                  fontWeight:
-                    700,
-                  fontSize:
-                    "13px",
+                  fontWeight: 700,
+                  fontSize: "13px",
                 }}
               >
                 {bulkProcessing
@@ -1407,13 +1034,11 @@ export default function OrdersPage() {
                     }`}
               </button>
 
-              {/* 새로고침 */}
-
               <button
                 type="button"
                 onClick={() => {
                   setSelectedIds([]);
-                  loadData();
+                  void loadData();
                 }}
                 disabled={
                   loading ||
@@ -1422,16 +1047,11 @@ export default function OrdersPage() {
                 style={{
                   border:
                     "1px solid #d1d5db",
-                  background:
-                    "#ffffff",
-                  borderRadius:
-                    "8px",
-                  padding:
-                    "8px 13px",
-                  cursor:
-                    "pointer",
-                  fontWeight:
-                    700,
+                  background: "#ffffff",
+                  borderRadius: "8px",
+                  padding: "8px 13px",
+                  cursor: "pointer",
+                  fontWeight: 700,
                 }}
               >
                 새로고침
@@ -1442,30 +1062,24 @@ export default function OrdersPage() {
           {loading ? (
             <div
               style={{
-                padding:
-                  "70px",
-                textAlign:
-                  "center",
-                color:
-                  "#94a3b8",
+                padding: "70px",
+                textAlign: "center",
+                color: "#94a3b8",
               }}
             >
-              주문 데이터를
-              불러오는 중입니다.
+              주문 데이터를 불러오는
+              중입니다.
             </div>
           ) : (
             <div
               style={{
-                overflowX:
-                  "auto",
+                overflowX: "auto",
               }}
             >
               <table
                 style={{
-                  width:
-                    "100%",
-                  minWidth:
-                    "1160px",
+                  width: "100%",
+                  minWidth: "1320px",
                   borderCollapse:
                     "collapse",
                 }}
@@ -1477,13 +1091,10 @@ export default function OrdersPage() {
                         "#f8fafc",
                     }}
                   >
-                    {/* 전체 선택 */}
-
                     <th
                       style={{
                         ...thStyle,
-                        width:
-                          "55px",
+                        width: "55px",
                         textAlign:
                           "center",
                       }}
@@ -1493,9 +1104,7 @@ export default function OrdersPage() {
                         checked={
                           allFilteredSelected
                         }
-                        onChange={(
-                          e
-                        ) =>
+                        onChange={(e) =>
                           handleSelectAll(
                             e.target
                               .checked
@@ -1509,43 +1118,31 @@ export default function OrdersPage() {
                       />
                     </th>
 
-                    <th
-                      style={
-                        thStyle
-                      }
-                    >
+                    <th style={thStyle}>
                       주문번호
                     </th>
 
-                    <th
-                      style={
-                        thStyle
-                      }
-                    >
+                    <th style={thStyle}>
+                      원주문번호
+                    </th>
+
+                    <th style={thStyle}>
                       주문일
                     </th>
 
-                    <th
-                      style={
-                        thStyle
-                      }
-                    >
-                      거래처
+                    <th style={thStyle}>
+                      납품일
                     </th>
 
-                    <th
-                      style={
-                        thStyle
-                      }
-                    >
-                      채널
+                    <th style={thStyle}>
+                      화주사
                     </th>
 
-                    <th
-                      style={
-                        thStyle
-                      }
-                    >
+                    <th style={thStyle}>
+                      판매채널
+                    </th>
+
+                    <th style={thStyle}>
                       상품
                     </th>
 
@@ -1560,34 +1157,24 @@ export default function OrdersPage() {
                     </th>
 
                     <th
-                      style={
-                        thStyle
-                      }
+                      style={{
+                        ...thStyle,
+                        textAlign:
+                          "right",
+                      }}
                     >
+                      주문금액
+                    </th>
+
+                    <th style={thStyle}>
                       주문상태
                     </th>
 
-                    <th
-                      style={
-                        thStyle
-                      }
-                    >
+                    <th style={thStyle}>
                       출고요청
                     </th>
 
-                    <th
-                      style={
-                        thStyle
-                      }
-                    >
-                      처리
-                    </th>
-
-                    <th
-                      style={
-                        thStyle
-                      }
-                    >
+                    <th style={thStyle}>
                       상세
                     </th>
                   </tr>
@@ -1613,16 +1200,18 @@ export default function OrdersPage() {
 
                       const currentStatus =
                         order.status ||
-                        "접수";
-
-                      const processing =
-                        processingId ===
-                        order.id;
+                        "수집완료";
 
                       const selectable =
                         isBulkProcessable(
                           order
                         );
+
+                      const displayOrderNumber =
+                        order.order_number ||
+                        order.order_no ||
+                        order.source_order_number ||
+                        "-";
 
                       return (
                         <tr
@@ -1630,8 +1219,6 @@ export default function OrdersPage() {
                             order.id
                           }
                         >
-                          {/* 선택 */}
-
                           <td
                             style={{
                               ...tdStyle,
@@ -1648,7 +1235,6 @@ export default function OrdersPage() {
                               )}
                               disabled={
                                 !selectable ||
-                                processing ||
                                 bulkProcessing
                               }
                               onChange={(
@@ -1663,34 +1249,57 @@ export default function OrdersPage() {
                             />
                           </td>
 
-                          {/* 주문번호 */}
-
                           <td
                             style={{
                               ...tdStyle,
                               fontWeight:
                                 700,
+                              whiteSpace:
+                                "nowrap",
                             }}
                           >
-                            {order.order_no ||
-                              order.order_number ||
-                              order.source_order_number ||
+                            {
+                              displayOrderNumber
+                            }
+                          </td>
+
+                          <td
+                            style={{
+                              ...tdStyle,
+                              color:
+                                "#475569",
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            {order.source_order_number ||
                               "-"}
                           </td>
 
-                          {/* 주문일 */}
-
                           <td
-                            style={
-                              tdStyle
-                            }
+                            style={{
+                              ...tdStyle,
+                              whiteSpace:
+                                "nowrap",
+                            }}
                           >
                             {formatDate(
                               order.order_date
                             )}
                           </td>
 
-                          {/* 거래처 */}
+                          <td
+                            style={{
+                              ...tdStyle,
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            {formatDate(
+                              order.delivery_date ||
+                                null
+                            )}
+                          </td>
 
                           <td
                             style={{
@@ -1722,8 +1331,6 @@ export default function OrdersPage() {
                             )}
                           </td>
 
-                          {/* 채널 */}
-
                           <td
                             style={
                               tdStyle
@@ -1734,18 +1341,14 @@ export default function OrdersPage() {
                             )}
                           </td>
 
-                          {/* 상품 */}
-
                           <td
                             style={
                               tdStyle
                             }
                           >
-                            {info.count}
+                            {info.count.toLocaleString()}
                             종
                           </td>
-
-                          {/* 수량 */}
 
                           <td
                             style={{
@@ -1756,13 +1359,29 @@ export default function OrdersPage() {
                                 700,
                             }}
                           >
-                            {(
+                            {Number(
                               order.total_qty ??
-                              info.quantity
+                                info.quantity
                             ).toLocaleString()}
                           </td>
 
-                          {/* 주문상태 */}
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign:
+                                "right",
+                              fontWeight:
+                                700,
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            {Number(
+                              order.total_amount ||
+                                0
+                            ).toLocaleString()}
+                            원
+                          </td>
 
                           <td
                             style={
@@ -1775,8 +1394,6 @@ export default function OrdersPage() {
                               }
                             />
                           </td>
-
-                          {/* 출고요청 */}
 
                           <td
                             style={
@@ -1819,102 +1436,6 @@ export default function OrdersPage() {
                             )}
                           </td>
 
-                          {/* 처리 */}
-
-                          <td
-                            style={{
-                              ...tdStyle,
-                              minWidth:
-                                "220px",
-                            }}
-                          >
-                            <div
-                              style={{
-                                display:
-                                  "flex",
-                                gap:
-                                  "6px",
-                                flexWrap:
-                                  "wrap",
-                              }}
-                            >
-                              {/* 접수 → 확인 */}
-
-                              {currentStatus ===
-                                "접수" && (
-                                <ActionButton
-                                  label="확인"
-                                  onClick={() =>
-                                    updateOrderStatus(
-                                      order,
-                                      "확인"
-                                    )
-                                  }
-                                  disabled={
-                                    processing ||
-                                    bulkProcessing
-                                  }
-                                />
-                              )}
-
-                              {/* 확인 → 확정 */}
-
-                              {currentStatus ===
-                                "확인" && (
-                                <ActionButton
-                                  label="확정"
-                                  onClick={() =>
-                                    updateOrderStatus(
-                                      order,
-                                      "확정"
-                                    )
-                                  }
-                                  disabled={
-                                    processing ||
-                                    bulkProcessing
-                                  }
-                                />
-                              )}
-
-                              {/* 확정 → 출고 요청 */}
-
-                              {currentStatus ===
-                                "확정" &&
-                                order.shipment_requested !==
-                                  true && (
-                                  <ActionButton
-                                    label="출고 요청"
-                                    onClick={() =>
-                                      requestShipment(
-                                        order
-                                      )
-                                    }
-                                    disabled={
-                                      processing ||
-                                      bulkProcessing
-                                    }
-                                  />
-                                )}
-
-                              {processing && (
-                                <span
-                                  style={{
-                                    alignSelf:
-                                      "center",
-                                    color:
-                                      "#64748b",
-                                    fontSize:
-                                      "12px",
-                                  }}
-                                >
-                                  처리중...
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* 상세 */}
-
                           <td
                             style={
                               tdStyle
@@ -1929,6 +1450,8 @@ export default function OrdersPage() {
                                   "none",
                                 fontWeight:
                                   700,
+                                whiteSpace:
+                                  "nowrap",
                               }}
                             >
                               상세 →
@@ -1943,7 +1466,7 @@ export default function OrdersPage() {
                     0 && (
                     <tr>
                       <td
-                        colSpan={11}
+                        colSpan={13}
                         style={{
                           padding:
                             "70px",
@@ -1971,115 +1494,6 @@ export default function OrdersPage() {
 }
 
 /* =========================================================
-   MENU
-========================================================= */
-
-function Menu({
-  href,
-  label,
-  icon,
-  active = false,
-}: {
-  href: string;
-  label: string;
-  icon: string;
-  active?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "13px",
-        padding:
-          "13px 14px",
-        borderRadius:
-          "10px",
-        color: active
-          ? "#ffffff"
-          : "#cbd5e1",
-        background: active
-          ? "#2563eb"
-          : "transparent",
-        textDecoration:
-          "none",
-        fontSize:
-          "15px",
-        fontWeight:
-          active ? 700 : 500,
-      }}
-    >
-      <span
-        style={{
-          width: "20px",
-          textAlign:
-            "center",
-        }}
-      >
-        {icon}
-      </span>
-
-      {label}
-    </Link>
-  );
-}
-
-/* =========================================================
-   ACTION BUTTON
-========================================================= */
-
-function ActionButton({
-  label,
-  onClick,
-  disabled,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        console.log(
-          "버튼 클릭:",
-          label
-        );
-
-        onClick();
-      }}
-      disabled={disabled}
-      style={{
-        border: "none",
-        borderRadius:
-          "7px",
-        padding:
-          "8px 12px",
-        background:
-          disabled
-            ? "#cbd5e1"
-            : "#2563eb",
-        color:
-          "#ffffff",
-        cursor:
-          disabled
-            ? "default"
-            : "pointer",
-        fontSize:
-          "12px",
-        fontWeight:
-          700,
-        whiteSpace:
-          "nowrap",
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-/* =========================================================
    STATUS BADGE
 ========================================================= */
 
@@ -2089,18 +1503,24 @@ function StatusBadge({
   status: string | null;
 }) {
   const value =
-    status || "접수";
+    status || "수집완료";
 
   let background =
-    "#eff6ff";
+    "#e0f2fe";
 
   let color =
-    "#2563eb";
+    "#0369a1";
+
+  if (value === "접수") {
+    background =
+      "#eff6ff";
+    color =
+      "#2563eb";
+  }
 
   if (value === "확인") {
     background =
       "#fef3c7";
-
     color =
       "#b45309";
   }
@@ -2108,7 +1528,6 @@ function StatusBadge({
   if (value === "확정") {
     background =
       "#dcfce7";
-
     color =
       "#15803d";
   }
@@ -2116,7 +1535,6 @@ function StatusBadge({
   if (value === "취소") {
     background =
       "#fee2e2";
-
     color =
       "#b91c1c";
   }
@@ -2124,18 +1542,14 @@ function StatusBadge({
   return (
     <span
       style={{
-        display:
-          "inline-block",
-        padding:
-          "6px 11px",
-        borderRadius:
-          "999px",
+        display: "inline-block",
+        padding: "6px 11px",
+        borderRadius: "999px",
         background,
         color,
-        fontSize:
-          "12px",
-        fontWeight:
-          700,
+        fontSize: "12px",
+        fontWeight: 700,
+        whiteSpace: "nowrap",
       }}
     >
       {value}
@@ -2150,34 +1564,43 @@ function StatusBadge({
 function getChannelName(
   channel: string | null
 ) {
+  if (!channel) {
+    return "-";
+  }
+
   const channels: Record<
     string,
     string
   > = {
-    oliveyoung:
-      "올리브영",
+    oliveyoung: "올리브영",
+    OLIVEYOUNG: "올리브영",
 
-    daiso:
-      "다이소",
+    daiso: "다이소",
+    DAISO: "다이소",
 
-    convenience:
-      "편의점",
+    emart: "이마트",
+    EMART: "이마트",
 
-    discount:
-      "할인점",
+    lottemart: "롯데마트",
+    LOTTEMART: "롯데마트",
 
-    supermarket:
-      "대형마트",
+    homeplus: "홈플러스",
+    HOMEPLUS: "홈플러스",
 
-    online:
-      "온라인",
+    gs25: "GS25",
+    GS25: "GS25",
+
+    cu: "CU",
+    CU: "CU",
+
+    seven: "세븐일레븐",
+    SEVEN: "세븐일레븐",
+
+    online: "온라인",
+    ONLINE: "온라인",
   };
 
-  return channel
-    ? channels[
-        channel
-      ] || channel
-    : "-";
+  return channels[channel] || channel;
 }
 
 /* =========================================================
@@ -2191,9 +1614,18 @@ function formatDate(
     return "-";
   }
 
-  return new Date(
-    value
-  ).toLocaleDateString(
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return value;
+  }
+
+  return date.toLocaleDateString(
     "ko-KR"
   );
 }
@@ -2203,34 +1635,20 @@ function formatDate(
 ========================================================= */
 
 const thStyle = {
-  padding:
-    "14px 16px",
-
-  textAlign:
-    "left" as const,
-
-  fontSize:
-    "13px",
-
-  color:
-    "#64748b",
-
-  fontWeight:
-    700,
-
+  padding: "14px 16px",
+  textAlign: "left" as const,
+  fontSize: "13px",
+  color: "#64748b",
+  fontWeight: 700,
   borderBottom:
     "1px solid #e5e7eb",
+  whiteSpace:
+    "nowrap" as const,
 };
 
 const tdStyle = {
-  padding:
-    "15px 16px",
-
-  fontSize:
-    "13px",
-
+  padding: "15px 16px",
+  fontSize: "13px",
   borderBottom:
     "1px solid #f1f5f9",
 };
-
-
